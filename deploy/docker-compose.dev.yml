@@ -1,0 +1,25 @@
+# Base de datos LOCAL de desarrollo y de tests. No es la de produccion:
+# qa y produccion viven en Neon (ver 10. Entornos y Despliegue en el vault).
+services:
+  db:
+    image: postgres:16
+    container_name: caleb-db-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: caleb
+      POSTGRES_PASSWORD: caleb
+      POSTGRES_DB: caleb_dev
+    ports:
+      # 5434 en la maquina: el 5432 lo usa el Postgres del sistema y el 5433 otro proyecto
+      - "5434:5432"
+    volumes:
+      - caleb_db_dev:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U caleb -d caleb_dev"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  caleb_db_dev:

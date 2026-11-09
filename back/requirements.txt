@@ -1,0 +1,12 @@
+# Web
+fastapi
+uvicorn[standard]
+
+# Base de datos
+sqlmodel
+psycopg[binary]
+alembic
+
+# Configuracion y logs
+pydantic-settings
+loguru
