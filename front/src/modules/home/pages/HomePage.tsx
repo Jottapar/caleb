@@ -1,4 +1,6 @@
-import { Card, Heading, Stack, Text } from "@chakra-ui/react";
+import { Heading, Stack, Text } from "@chakra-ui/react";
+
+import { HealthCard } from "../../health";
 
 export function HomePage() {
   return (
@@ -11,14 +13,7 @@ export function HomePage() {
         </Text>
       </Stack>
 
-      <Card.Root>
-        <Card.Body>
-          <Card.Title>Todavía no hay nada que mostrar</Card.Title>
-          <Card.Description>
-            El resumen aparecerá cuando empieces a registrar recibos y gastos.
-          </Card.Description>
-        </Card.Body>
-      </Card.Root>
+      <HealthCard />
     </Stack>
   );
 }
