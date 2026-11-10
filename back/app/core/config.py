@@ -20,7 +20,6 @@ class Settings(BaseSettings):
     MIGRATION_DATABASE_URL: str = ""
     # Origenes que el navegador puede usar para llamar a la API (el front en dev)
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
-
     @property
     def alembic_url(self) -> str:
         """URL que usan las migraciones."""

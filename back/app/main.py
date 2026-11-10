@@ -17,9 +17,7 @@ app.add_middleware(
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+    allow_headers=["*"],)
 # Solo dos handlers: los errores de dominio y todo lo demas.
 app.add_exception_handler(AppError, app_error_handler)
 app.add_exception_handler(Exception, unexpected_error_handler)
