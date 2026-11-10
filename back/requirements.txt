@@ -4,5 +4,15 @@ uvicorn[standard]
 
 # Base de datos
 sqlmodel
-psycopg[binary] alembic # Configuracion y logs pydantic-settings
+psycopg[binary]
+alembic
+
+# Configuracion y logs
+pydantic-settings
 loguru
+
+# Autenticacion
+pwdlib[argon2]
+
+# Tests
+pytest
