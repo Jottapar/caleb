@@ -34,7 +34,9 @@ contradecir.
 
 ---
 
-## 2. Johan está aprendiendo
+## 2. Cómo trabajamos
+
+### Johan está aprendiendo
 
 Este es su primer proyecto con FastAPI y React. **Explica el código que escribes**, no solo lo
 entregues funcionando: qué recibe cada función, de qué tipo, qué hace y qué devuelve. Código que
@@ -42,6 +44,30 @@ funciona pero que él no entiende no le sirve, porque no lo puede mantener ni de
 
 Si una explicación necesita quedar guardada, va a una nota de Obsidian, no a un comentario largo en
 el código.
+
+### Quién ejecuta qué
+
+**Johan corre él mismo** todos estos comandos. Dicta el comando, explica qué hace y qué debería
+verse como resultado, y espera a que él confirme. No los ejecutes por él:
+
+- **Git:** `add`, `status`, `commit`, `push`. Ni siquiera un `git status` de solo lectura "para
+  verificar antes de commitear": esa revisión es suya, es el reflejo que está construyendo.
+- **Alembic:** `alembic revision --autogenerate -m "..."` y `alembic upgrade head`. Los dos pasos,
+  siempre. Entre uno y otro está el momento de leer la migración; por eso son dos.
+- **Levantar cosas:** Uvicorn, Vite, `docker compose`, instalar dependencias.
+
+**Claude sí escribe** el código de la aplicación y el contenido de los archivos de migración cuando
+el autogenerate necesita arreglo (renombrados, columnas obligatorias sobre datos existentes,
+cambios de tipo), explicando cada línea antes de que él lo aplique.
+
+**Regla que no se rompe:** ninguna migración se aplica sin que los dos la hayamos leído. Da igual
+quién la escribió.
+
+### Commits
+
+El mensaje lo escribe Johan. Si se le sugiere uno, el `Closes #N` va como trailer en la última
+línea, después de una línea en blanco. Él usa lazygit: en el panel de commit, Enter hace salto de
+línea y `Ctrl+S` confirma.
 
 ---
 
