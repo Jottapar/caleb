@@ -4,7 +4,13 @@ from app.core.database import SessionDep
 from app.core.security import auth
 from app.modules.auth.dependencies import CurrentCompanyId
 from app.modules.items import service
-from app.modules.items.schemas import ItemCreate, ItemRead, ItemUpdate, StockMovementCreate
+from app.modules.items.schemas import (
+    BulkStockMovementCreate,
+    ItemCreate,
+    ItemRead,
+    ItemUpdate,
+    StockMovementCreate,
+)
 
 router = APIRouter(
     prefix="/items",
@@ -38,3 +44,10 @@ def add_stock(
     item_id: int, data: StockMovementCreate, session: SessionDep, empresa_id: CurrentCompanyId
 ):
     return service.add_stock(session, item_id, empresa_id, data.cantidad)
+
+
+@router.post("/stock-movements/bulk", response_model=list[ItemRead])
+def add_stock_bulk(
+    data: BulkStockMovementCreate, session: SessionDep, empresa_id: CurrentCompanyId
+):
+    return service.add_stock_bulk(session, empresa_id, data.lineas)

@@ -248,33 +248,116 @@ it("no elimina el producto si cancelo el diálogo", async () => {
   expect(screen.getByText("Harina de trigo")).toBeInTheDocument();
 });
 
-it("agrega existencias a un producto y la fila queda actualizada", async () => {
-  let producto = { ...HARINA };
+const AZUCAR = {
+  id: 2,
+  codigo: "AZU-001",
+  nombre: "Azúcar",
+  unidad: "und",
+  costo: "1000.00",
+  precio_venta: "2000.00",
+  impuesto_id: 1,
+  se_vende: true,
+  es_insumo: false,
+  activo: true,
+  existencias: "0",
+};
+
+it("agrega una línea al carrito al elegir un producto y una cantidad", async () => {
   server.use(
     http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
-    http.get(ITEMS_URL, () => HttpResponse.json([producto])),
-    http.post(`${ITEMS_URL}/:id/stock-movements`, async ({ request }) => {
-      const data = (await request.json()) as { cantidad: string };
-      producto = { ...producto, existencias: (Number(producto.existencias) + Number(data.cantidad)).toFixed(4) };
-      return HttpResponse.json(producto);
+    http.get(ITEMS_URL, () => HttpResponse.json([HARINA, AZUCAR])),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Agregar existencias" }));
+  const dialog = await screen.findByRole("dialog");
+  await user.selectOptions(within(dialog).getByLabelText(/producto/i), "Harina de trigo");
+  await user.type(within(dialog).getByLabelText(/cantidad/i), "5");
+  await user.click(within(dialog).getByRole("button", { name: "Agregar" }));
+
+  expect(within(dialog).getByRole("cell", { name: "Harina de trigo" })).toBeInTheDocument();
+  expect(within(dialog).getByRole("cell", { name: "5" })).toBeInTheDocument();
+});
+
+it("el carrito sigue abierto con sus líneas si cierro y vuelvo a abrir la ventana", async () => {
+  server.use(
+    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
+    http.get(ITEMS_URL, () => HttpResponse.json([HARINA, AZUCAR])),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Agregar existencias" }));
+  let dialog = await screen.findByRole("dialog");
+  await user.selectOptions(within(dialog).getByLabelText(/producto/i), "Harina de trigo");
+  await user.type(within(dialog).getByLabelText(/cantidad/i), "5");
+  await user.click(within(dialog).getByRole("button", { name: "Agregar" }));
+  await user.click(within(dialog).getByRole("button", { name: /cerrar/i }));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Agregar existencias" }));
+  dialog = await screen.findByRole("dialog");
+
+  expect(within(dialog).getByRole("cell", { name: "Harina de trigo" })).toBeInTheDocument();
+});
+
+it("quita una línea del carrito", async () => {
+  server.use(
+    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
+    http.get(ITEMS_URL, () => HttpResponse.json([HARINA, AZUCAR])),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Agregar existencias" }));
+  const dialog = await screen.findByRole("dialog");
+  await user.selectOptions(within(dialog).getByLabelText(/producto/i), "Harina de trigo");
+  await user.type(within(dialog).getByLabelText(/cantidad/i), "5");
+  await user.click(within(dialog).getByRole("button", { name: "Agregar" }));
+  await user.click(within(dialog).getByRole("button", { name: /quitar/i }));
+
+  expect(within(dialog).queryByRole("cell", { name: "Harina de trigo" })).not.toBeInTheDocument();
+});
+
+it("actualiza las existencias de todas las líneas al confirmar", async () => {
+  let items = [HARINA, AZUCAR];
+  server.use(
+    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
+    http.get(ITEMS_URL, () => HttpResponse.json(items)),
+    http.post(`${ITEMS_URL}/stock-movements/bulk`, async ({ request }) => {
+      const data = (await request.json()) as { lineas: { item_id: number; cantidad: string }[] };
+      items = items.map((item) => {
+        const linea = data.lineas.find((l) => l.item_id === item.id);
+        if (!linea) {
+          return item;
+        }
+        return {
+          ...item,
+          existencias: (Number(item.existencias) + Number(linea.cantidad)).toFixed(4),
+        };
+      });
+      return HttpResponse.json(items);
     }),
   );
   const user = userEvent.setup();
 
   renderPage();
-  await user.click(await screen.findByRole("button", { name: /agregar existencias/i }));
+  await user.click(await screen.findByRole("button", { name: "Agregar existencias" }));
   const dialog = await screen.findByRole("dialog");
+  await user.selectOptions(within(dialog).getByLabelText(/producto/i), "Harina de trigo");
   await user.type(within(dialog).getByLabelText(/cantidad/i), "5");
-  await user.click(within(dialog).getByRole("button", { name: /agregar/i }));
+  await user.click(within(dialog).getByRole("button", { name: "Agregar" }));
+  await user.click(within(dialog).getByRole("button", { name: "Actualizar existencias" }));
 
   expect(await screen.findByText("15.0000")).toBeInTheDocument();
 });
 
-it("muestra el error del backend cuando la cantidad es inválida", async () => {
+it("si falla la actualización, el carrito sigue con sus líneas y muestra el error", async () => {
   server.use(
     http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
-    http.get(ITEMS_URL, () => HttpResponse.json([HARINA])),
-    http.post(`${ITEMS_URL}/:id/stock-movements`, () =>
+    http.get(ITEMS_URL, () => HttpResponse.json([HARINA, AZUCAR])),
+    http.post(`${ITEMS_URL}/stock-movements/bulk`, () =>
       HttpResponse.json(
         { error: "business_error", message: "La cantidad a agregar debe ser mayor a cero" },
         { status: 422 },
@@ -284,12 +367,15 @@ it("muestra el error del backend cuando la cantidad es inválida", async () => {
   const user = userEvent.setup();
 
   renderPage();
-  await user.click(await screen.findByRole("button", { name: /agregar existencias/i }));
+  await user.click(await screen.findByRole("button", { name: "Agregar existencias" }));
   const dialog = await screen.findByRole("dialog");
+  await user.selectOptions(within(dialog).getByLabelText(/producto/i), "Harina de trigo");
   await user.type(within(dialog).getByLabelText(/cantidad/i), "-1");
-  await user.click(within(dialog).getByRole("button", { name: /agregar/i }));
+  await user.click(within(dialog).getByRole("button", { name: "Agregar" }));
+  await user.click(within(dialog).getByRole("button", { name: "Actualizar existencias" }));
 
   expect(
     await within(dialog).findByText("La cantidad a agregar debe ser mayor a cero"),
   ).toBeInTheDocument();
+  expect(within(dialog).getByRole("cell", { name: "Harina de trigo" })).toBeInTheDocument();
 });

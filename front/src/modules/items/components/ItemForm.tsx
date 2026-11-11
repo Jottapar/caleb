@@ -1,4 +1,5 @@
 import { Button, Field, HStack, Input, NativeSelect, Stack, Text } from "@chakra-ui/react";
+import type { ReactNode } from "react";
 import { useState } from "react";
 
 import { useTaxes } from "../../taxes/hooks/useTaxes";
@@ -10,9 +11,17 @@ type Props = {
   onCancel?: () => void;
   isSubmitting: boolean;
   errorMessage: string | null;
+  extraActions?: ReactNode;
 };
 
-export function ItemForm({ initialValues, onSubmit, onCancel, isSubmitting, errorMessage }: Props) {
+export function ItemForm({
+  initialValues,
+  onSubmit,
+  onCancel,
+  isSubmitting,
+  errorMessage,
+  extraActions,
+}: Props) {
   const taxes = useTaxes();
   const [nombre, setNombre] = useState(initialValues?.nombre ?? "");
   const [codigo, setCodigo] = useState("");
@@ -110,6 +119,7 @@ export function ItemForm({ initialValues, onSubmit, onCancel, isSubmitting, erro
             Cerrar
           </Button>
         )}
+        {extraActions}
       </HStack>
     </Stack>
   );

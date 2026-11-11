@@ -239,6 +239,100 @@ def test_update_item_from_other_company_returns_404(logged_in_client, session):
     assert response.status_code == 404
 
 
+def test_bulk_add_stock_increases_existencias_for_each_line(logged_in_client, session):
+    impuesto_id = _sin_impuesto_id(session)
+    harina = logged_in_client.post(
+        URL,
+        json={"nombre": "Harina", "impuesto_id": impuesto_id, "cantidad_inicial": "5"},
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+    azucar = logged_in_client.post(
+        URL,
+        json={"nombre": "Azúcar", "impuesto_id": impuesto_id},
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+
+    response = logged_in_client.post(
+        f"{URL}/stock-movements/bulk",
+        json={
+            "lineas": [
+                {"item_id": harina["id"], "cantidad": "3"},
+                {"item_id": azucar["id"], "cantidad": "2"},
+            ]
+        },
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 200
+    existencias = {item["nombre"]: item["existencias"] for item in logged_in_client.get(URL).json()}
+    assert existencias["Harina"] == "8.0000"
+    assert existencias["Azúcar"] == "2.0000"
+
+
+def test_bulk_add_stock_rejects_if_any_line_invalid_and_applies_nothing(logged_in_client, session):
+    impuesto_id = _sin_impuesto_id(session)
+    harina = logged_in_client.post(
+        URL,
+        json={"nombre": "Harina", "impuesto_id": impuesto_id},
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+    azucar = logged_in_client.post(
+        URL,
+        json={"nombre": "Azúcar", "impuesto_id": impuesto_id},
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+
+    response = logged_in_client.post(
+        f"{URL}/stock-movements/bulk",
+        json={
+            "lineas": [
+                {"item_id": harina["id"], "cantidad": "3"},
+                {"item_id": azucar["id"], "cantidad": "-1"},
+            ]
+        },
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "business_error"
+    existencias = {item["nombre"]: item["existencias"] for item in logged_in_client.get(URL).json()}
+    assert existencias["Harina"] == "0"
+    assert existencias["Azúcar"] == "0"
+
+
+def test_bulk_add_stock_item_from_other_company_rejects_all(logged_in_client, session):
+    impuesto_id = _sin_impuesto_id(session)
+    harina = logged_in_client.post(
+        URL,
+        json={"nombre": "Harina", "impuesto_id": impuesto_id},
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+    otra_empresa = Company(nombre="Otra Empresa")
+    session.add(otra_empresa)
+    session.flush()
+    otro_impuesto = Tax(empresa_id=otra_empresa.id, nombre="Sin impuesto", porcentaje=0)
+    session.add(otro_impuesto)
+    session.flush()
+    ajeno = items_service.create_item(
+        session, empresa_id=otra_empresa.id, nombre="Item Ajeno", impuesto_id=otro_impuesto.id
+    )
+
+    response = logged_in_client.post(
+        f"{URL}/stock-movements/bulk",
+        json={
+            "lineas": [
+                {"item_id": harina["id"], "cantidad": "3"},
+                {"item_id": ajeno.id, "cantidad": "2"},
+            ]
+        },
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 404
+    existencias = {item["nombre"]: item["existencias"] for item in logged_in_client.get(URL).json()}
+    assert existencias["Harina"] == "0"
+
+
 def test_add_stock_increases_existencias(logged_in_client, session):
     created = logged_in_client.post(
         URL,

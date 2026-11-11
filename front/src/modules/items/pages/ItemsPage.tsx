@@ -2,19 +2,19 @@ import { Button, Center, Dialog, Drawer, Heading, HStack, Spinner, Stack, Text }
 import { isAxiosError } from "axios";
 import { useState } from "react";
 
-import { AddStockDialog } from "../components/AddStockDialog";
+import { AddStockCartDialog } from "../components/AddStockCartDialog";
 import { ItemForm } from "../components/ItemForm";
 import { ItemTable } from "../components/ItemTable";
-import { useAddStock } from "../hooks/useAddStock";
+import { useAddStockBulk } from "../hooks/useAddStockBulk";
 import { useCreateItem } from "../hooks/useCreateItem";
 import { useDeleteItem } from "../hooks/useDeleteItem";
 import { useItems } from "../hooks/useItems";
 import { useUpdateItem } from "../hooks/useUpdateItem";
-import type { Item, ItemCreate, ItemUpdate } from "../types";
+import type { Item, ItemCreate, ItemUpdate, StockCartLine } from "../types";
 
 const ERROR_GENERICO_GUARDAR = "No se pudo guardar el producto. Intenta de nuevo.";
 const ERROR_GENERICO_ELIMINAR = "No se pudo eliminar el producto. Intenta de nuevo.";
-const ERROR_GENERICO_AGREGAR = "No se pudo agregar la cantidad. Intenta de nuevo.";
+const ERROR_GENERICO_AGREGAR = "No se pudo actualizar las existencias. Intenta de nuevo.";
 
 function getErrorMessage(isError: boolean, error: unknown, errorGenerico = ERROR_GENERICO_GUARDAR) {
   if (!isError) {
@@ -30,10 +30,11 @@ export function ItemsPage() {
   const createItem = useCreateItem();
   const updateItem = useUpdateItem();
   const deleteItem = useDeleteItem();
-  const addStock = useAddStock();
+  const addStockBulk = useAddStockBulk();
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [deletingItem, setDeletingItem] = useState<Item | null>(null);
-  const [addingStockItem, setAddingStockItem] = useState<Item | null>(null);
+  const [isAddStockDialogOpen, setIsAddStockDialogOpen] = useState(false);
+  const [cartLines, setCartLines] = useState<StockCartLine[]>([]);
   const deleteErrorMessage = getErrorMessage(
     deleteItem.isError,
     deleteItem.error,
@@ -60,9 +61,12 @@ export function ItemsPage() {
     deleteItem.reset();
   }
 
-  function handleCloseAddStockDialog() {
-    setAddingStockItem(null);
-    addStock.reset();
+  function handleAddCartLine(linea: StockCartLine) {
+    setCartLines((lineas) => [...lineas.filter((l) => l.itemId !== linea.itemId), linea]);
+  }
+
+  function handleRemoveCartLine(itemId: number) {
+    setCartLines((lineas) => lineas.filter((linea) => linea.itemId !== itemId));
   }
 
   function handleConfirmDelete() {
@@ -74,14 +78,18 @@ export function ItemsPage() {
     });
   }
 
-  function handleConfirmAddStock(cantidad: string) {
-    if (!addingStockItem) {
-      return;
-    }
-    addStock.mutate(
-      { id: addingStockItem.id, cantidad },
-      { onSuccess: () => setAddingStockItem(null) },
-    );
+  function handleCloseAddStockDialog() {
+    setIsAddStockDialogOpen(false);
+    addStockBulk.reset();
+  }
+
+  function handleConfirmAddStock() {
+    addStockBulk.mutate(cartLines, {
+      onSuccess: () => {
+        setCartLines([]);
+        setIsAddStockDialogOpen(false);
+      },
+    });
   }
 
   return (
@@ -92,6 +100,11 @@ export function ItemsPage() {
         onSubmit={handleCreate}
         isSubmitting={createItem.isPending}
         errorMessage={getErrorMessage(createItem.isError, createItem.error)}
+        extraActions={
+          <Button type="button" variant="outline" onClick={() => setIsAddStockDialogOpen(true)}>
+            Agregar existencias
+          </Button>
+        }
       />
 
       {items.isPending && (
@@ -112,7 +125,6 @@ export function ItemsPage() {
           onEdit={setEditingItem}
           onToggleActive={handleToggleActive}
           onDelete={setDeletingItem}
-          onAddStock={setAddingStockItem}
         />
       )}
 
@@ -185,13 +197,20 @@ export function ItemsPage() {
         </Dialog.Root>
       )}
 
-      {addingStockItem && (
-        <AddStockDialog
-          item={addingStockItem}
+      {isAddStockDialogOpen && items.data && (
+        <AddStockCartDialog
+          items={items.data}
+          lineas={cartLines}
+          onAddLine={handleAddCartLine}
+          onRemoveLine={handleRemoveCartLine}
           onConfirm={handleConfirmAddStock}
-          onCancel={handleCloseAddStockDialog}
-          isSubmitting={addStock.isPending}
-          errorMessage={getErrorMessage(addStock.isError, addStock.error, ERROR_GENERICO_AGREGAR)}
+          onClose={handleCloseAddStockDialog}
+          isSubmitting={addStockBulk.isPending}
+          errorMessage={getErrorMessage(
+            addStockBulk.isError,
+            addStockBulk.error,
+            ERROR_GENERICO_AGREGAR,
+          )}
         />
       )}
     </Stack>

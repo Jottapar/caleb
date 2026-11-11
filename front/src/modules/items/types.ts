@@ -29,3 +29,9 @@ export type ItemUpdate = {
   impuesto_id?: number;
   activo?: boolean;
 };
+
+export type StockCartLine = {
+  itemId: number;
+  nombre: string;
+  cantidad: string;
+};

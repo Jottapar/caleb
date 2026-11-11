@@ -5,7 +5,7 @@ from sqlmodel import Session, select
 
 from app.core.errors import BusinessError, NotFoundError
 from app.modules.items.models import InventoryMovement, Item
-from app.modules.items.schemas import ItemRead, ItemUpdate
+from app.modules.items.schemas import ItemRead, ItemUpdate, StockMovementLine
 from app.modules.taxes.models import Tax
 
 
@@ -151,6 +151,36 @@ def add_stock(session: Session, item_id: int, empresa_id: int, cantidad: Decimal
     session.commit()
     session.refresh(item)
     return _with_stock(session, item)
+
+
+def add_stock_bulk(
+    session: Session, empresa_id: int, lineas: list[StockMovementLine]
+) -> list[ItemRead]:
+    items = []
+    for linea in lineas:
+        if linea.cantidad <= 0:
+            raise BusinessError("La cantidad a agregar debe ser mayor a cero")
+        items.append(get_by_id(session, linea.item_id, empresa_id))
+
+    for linea, item in zip(lineas, items):
+        session.add(
+            InventoryMovement(
+                empresa_id=empresa_id,
+                item_id=item.id,
+                tipo="entrada",
+                cantidad=linea.cantidad,
+                costo_unitario=item.costo,
+                origen="ajuste_manual",
+                origen_id=item.id,
+            )
+        )
+
+    session.commit()
+    resultado = []
+    for item in items:
+        session.refresh(item)
+        resultado.append(_with_stock(session, item))
+    return resultado
 
 
 def delete_item(session: Session, item_id: int, empresa_id: int) -> None:

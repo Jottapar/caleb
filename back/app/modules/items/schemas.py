@@ -27,6 +27,15 @@ class StockMovementCreate(SQLModel):
     cantidad: Decimal
 
 
+class StockMovementLine(SQLModel):
+    item_id: int
+    cantidad: Decimal
+
+
+class BulkStockMovementCreate(SQLModel):
+    lineas: list[StockMovementLine]
+
+
 class ItemRead(SQLModel):
     id: int
     codigo: str
