@@ -1,0 +1,181 @@
+from sqlmodel import select
+
+from app.modules.companies.models import Company
+from app.modules.items import service as items_service
+from app.modules.taxes.models import Tax
+
+URL = "/api/v1/items"
+
+
+def _csrf_headers(logged_in_client):
+    return {"X-CSRF-TOKEN": logged_in_client.cookies.get("csrf_access_token")}
+
+
+def _sin_impuesto_id(session) -> int:
+    empresa = session.exec(select(Company).where(Company.nombre == "Panadería Luna")).one()
+    return session.exec(
+        select(Tax).where(Tax.nombre == "Sin impuesto", Tax.empresa_id == empresa.id)
+    ).one().id
+
+
+def test_create_item_returns_201_and_saved_data(logged_in_client, session):
+    response = logged_in_client.post(
+        URL,
+        json={
+            "codigo": "HAR-001",
+            "nombre": "Harina de trigo",
+            "costo": "2000",
+            "precio_venta": "3500",
+            "impuesto_id": _sin_impuesto_id(session),
+        },
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["codigo"] == "HAR-001"
+    assert body["nombre"] == "Harina de trigo"
+    assert body["costo"] == "2000.00"
+    assert body["precio_venta"] == "3500.00"
+    assert body["activo"] is True
+
+
+def test_create_item_without_code_generates_one(logged_in_client, session):
+    response = logged_in_client.post(
+        URL,
+        json={"nombre": "Harina de trigo", "impuesto_id": _sin_impuesto_id(session)},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["codigo"] != ""
+
+
+def test_create_item_rejects_duplicate_code(logged_in_client, session):
+    impuesto_id = _sin_impuesto_id(session)
+    logged_in_client.post(
+        URL,
+        json={"codigo": "HAR-001", "nombre": "Harina", "impuesto_id": impuesto_id},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    response = logged_in_client.post(
+        URL,
+        json={"codigo": "HAR-001", "nombre": "Harina de trigo", "impuesto_id": impuesto_id},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "business_error"
+
+
+def test_create_item_with_initial_quantity_shows_in_stock(logged_in_client, session):
+    response = logged_in_client.post(
+        URL,
+        json={
+            "nombre": "Harina de trigo",
+            "impuesto_id": _sin_impuesto_id(session),
+            "cantidad_inicial": "10",
+        },
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["existencias"] == "10.0000"
+
+
+def test_create_item_without_initial_quantity_has_zero_stock(logged_in_client, session):
+    response = logged_in_client.post(
+        URL,
+        json={"nombre": "Harina de trigo", "impuesto_id": _sin_impuesto_id(session)},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["existencias"] == "0"
+
+
+def test_create_item_appears_in_list_with_company_data(logged_in_client, session):
+    logged_in_client.post(
+        URL,
+        json={
+            "codigo": "HAR-001",
+            "nombre": "Harina de trigo",
+            "costo": "2000",
+            "precio_venta": "3500",
+            "impuesto_id": _sin_impuesto_id(session),
+            "cantidad_inicial": "5",
+        },
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    response = logged_in_client.get(URL)
+
+    assert response.status_code == 200
+    items = response.json()
+    assert len(items) == 1
+    item = items[0]
+    assert item["codigo"] == "HAR-001"
+    assert item["nombre"] == "Harina de trigo"
+    assert item["costo"] == "2000.00"
+    assert item["precio_venta"] == "3500.00"
+    assert item["existencias"] == "5.0000"
+
+
+def test_list_items_only_returns_current_company(logged_in_client, session):
+    otra_empresa = Company(nombre="Otra Empresa")
+    session.add(otra_empresa)
+    session.flush()
+    otro_impuesto = Tax(empresa_id=otra_empresa.id, nombre="Sin impuesto", porcentaje=0)
+    session.add(otro_impuesto)
+    session.flush()
+    items_service.create_item(
+        session,
+        empresa_id=otra_empresa.id,
+        nombre="Item Ajeno",
+        impuesto_id=otro_impuesto.id,
+    )
+    logged_in_client.post(
+        URL,
+        json={"nombre": "Item Propio", "impuesto_id": _sin_impuesto_id(session)},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    response = logged_in_client.get(URL)
+
+    nombres = [item["nombre"] for item in response.json()]
+    assert "Item Propio" in nombres
+    assert "Item Ajeno" not in nombres
+
+
+def test_create_item_requires_authentication(client):
+    response = client.post(URL, json={"nombre": "Harina", "impuesto_id": 1})
+
+    assert response.status_code == 401
+
+
+def test_create_item_rejects_unknown_tax(logged_in_client):
+    response = logged_in_client.post(
+        URL,
+        json={"nombre": "Harina", "impuesto_id": 99999},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "business_error"
+
+
+def test_create_item_rejects_both_se_vende_and_es_insumo_false(logged_in_client, session):
+    response = logged_in_client.post(
+        URL,
+        json={
+            "nombre": "Harina",
+            "impuesto_id": _sin_impuesto_id(session),
+            "se_vende": False,
+            "es_insumo": False,
+        },
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "business_error"

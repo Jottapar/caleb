@@ -4,6 +4,7 @@ from sqlmodel import select
 from app.core.errors import AlreadyExistsError
 from app.core.security import password_hash
 from app.modules.companies.models import Company
+from app.modules.taxes.models import Tax
 from app.modules.users import service
 from app.modules.users.models import User, UserCompany
 
@@ -63,3 +64,19 @@ def test_create_company_rejects_duplicate_email(session):
 
     empresa_2 = session.exec(select(Company).where(Company.nombre == "Empresa 2")).all()
     assert empresa_2 == []
+
+
+def test_create_company_with_owner_seeds_default_taxes(session):
+    service.create_company_with_owner(
+        session,
+        company_name="Panadería Luna",
+        owner_name="Johan",
+        email="johan@example.com",
+        password="una-clave-segura",
+    )
+
+    company = session.exec(select(Company).where(Company.nombre == "Panadería Luna")).one()
+    taxes = session.exec(select(Tax).where(Tax.empresa_id == company.id)).all()
+    nombres_y_porcentajes = {(tax.nombre, tax.porcentaje) for tax in taxes}
+
+    assert nombres_y_porcentajes == {("Sin impuesto", 0), ("IVA 19%", 19)}

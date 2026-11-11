@@ -3,6 +3,7 @@ import { createBrowserRouter, Link as RouterLink } from "react-router-dom";
 
 import { CompanyName, LoginPage, LogoutButton, RequireAuth } from "../modules/auth";
 import { HomePage } from "../modules/home";
+import { ItemsPage } from "../modules/items";
 import { ThirdPartiesPage } from "../modules/thirdParties";
 import { ErrorPage } from "../shared/components/ErrorPage";
 import { Layout } from "../shared/components/Layout";
@@ -16,6 +17,9 @@ const nav = (
     </Link>
     <Link asChild color="white" fontWeight="medium" px="2" py="1" borderRadius="md" bg="whiteAlpha.100">
       <RouterLink to="/terceros">Clientes y proveedores</RouterLink>
+    </Link>
+    <Link asChild color="white" fontWeight="medium" px="2" py="1" borderRadius="md" bg="whiteAlpha.100">
+      <RouterLink to="/productos">Productos y existencias</RouterLink>
     </Link>
   </>
 );
@@ -33,6 +37,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <HomePage /> },
       { path: "terceros", element: <ThirdPartiesPage /> },
+      { path: "productos", element: <ItemsPage /> },
     ],
   },
 ]);
