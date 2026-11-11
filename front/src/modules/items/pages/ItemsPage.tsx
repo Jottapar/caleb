@@ -1,30 +1,44 @@
-import { Center, Drawer, Heading, Spinner, Stack, Text } from "@chakra-ui/react";
+import { Button, Center, Dialog, Drawer, Heading, HStack, Spinner, Stack, Text } from "@chakra-ui/react";
 import { isAxiosError } from "axios";
 import { useState } from "react";
 
+import { AddStockDialog } from "../components/AddStockDialog";
 import { ItemForm } from "../components/ItemForm";
 import { ItemTable } from "../components/ItemTable";
+import { useAddStock } from "../hooks/useAddStock";
 import { useCreateItem } from "../hooks/useCreateItem";
+import { useDeleteItem } from "../hooks/useDeleteItem";
 import { useItems } from "../hooks/useItems";
 import { useUpdateItem } from "../hooks/useUpdateItem";
 import type { Item, ItemCreate, ItemUpdate } from "../types";
 
 const ERROR_GENERICO_GUARDAR = "No se pudo guardar el producto. Intenta de nuevo.";
+const ERROR_GENERICO_ELIMINAR = "No se pudo eliminar el producto. Intenta de nuevo.";
+const ERROR_GENERICO_AGREGAR = "No se pudo agregar la cantidad. Intenta de nuevo.";
 
-function getErrorMessage(isError: boolean, error: unknown) {
+function getErrorMessage(isError: boolean, error: unknown, errorGenerico = ERROR_GENERICO_GUARDAR) {
   if (!isError) {
     return null;
   }
   return isAxiosError(error) && error.response?.data?.message
     ? error.response.data.message
-    : ERROR_GENERICO_GUARDAR;
+    : errorGenerico;
 }
 
 export function ItemsPage() {
   const items = useItems();
   const createItem = useCreateItem();
   const updateItem = useUpdateItem();
+  const deleteItem = useDeleteItem();
+  const addStock = useAddStock();
   const [editingItem, setEditingItem] = useState<Item | null>(null);
+  const [deletingItem, setDeletingItem] = useState<Item | null>(null);
+  const [addingStockItem, setAddingStockItem] = useState<Item | null>(null);
+  const deleteErrorMessage = getErrorMessage(
+    deleteItem.isError,
+    deleteItem.error,
+    ERROR_GENERICO_ELIMINAR,
+  );
 
   function handleCreate(data: ItemCreate) {
     createItem.mutate(data);
@@ -39,6 +53,35 @@ export function ItemsPage() {
       return;
     }
     updateItem.mutate({ id: editingItem.id, data }, { onSuccess: () => setEditingItem(null) });
+  }
+
+  function handleCloseDeleteDialog() {
+    setDeletingItem(null);
+    deleteItem.reset();
+  }
+
+  function handleCloseAddStockDialog() {
+    setAddingStockItem(null);
+    addStock.reset();
+  }
+
+  function handleConfirmDelete() {
+    if (!deletingItem) {
+      return;
+    }
+    deleteItem.mutate(deletingItem.id, {
+      onSuccess: () => setDeletingItem(null),
+    });
+  }
+
+  function handleConfirmAddStock(cantidad: string) {
+    if (!addingStockItem) {
+      return;
+    }
+    addStock.mutate(
+      { id: addingStockItem.id, cantidad },
+      { onSuccess: () => setAddingStockItem(null) },
+    );
   }
 
   return (
@@ -68,6 +111,8 @@ export function ItemsPage() {
           items={items.data}
           onEdit={setEditingItem}
           onToggleActive={handleToggleActive}
+          onDelete={setDeletingItem}
+          onAddStock={setAddingStockItem}
         />
       )}
 
@@ -96,6 +141,58 @@ export function ItemsPage() {
             </Drawer.Content>
           </Drawer.Positioner>
         </Drawer.Root>
+      )}
+
+      {deletingItem && (
+        <Dialog.Root
+          role="alertdialog"
+          open
+          onOpenChange={(details) => !details.open && handleCloseDeleteDialog()}
+        >
+          <Dialog.Backdrop />
+          <Dialog.Positioner>
+            <Dialog.Content>
+              <Dialog.Header>
+                <Dialog.Title>Eliminar {deletingItem.nombre}</Dialog.Title>
+              </Dialog.Header>
+              <Dialog.Body>
+                <Text>
+                  ¿Seguro que quieres eliminar {deletingItem.nombre}? Esta acción no se puede
+                  deshacer.
+                </Text>
+                {deleteErrorMessage && (
+                  <Text color="fg.error" mt="2">
+                    {deleteErrorMessage}
+                  </Text>
+                )}
+              </Dialog.Body>
+              <Dialog.Footer>
+                <HStack>
+                  <Button variant="outline" onClick={handleCloseDeleteDialog}>
+                    Cancelar
+                  </Button>
+                  <Button
+                    colorPalette="red"
+                    loading={deleteItem.isPending}
+                    onClick={handleConfirmDelete}
+                  >
+                    Eliminar
+                  </Button>
+                </HStack>
+              </Dialog.Footer>
+            </Dialog.Content>
+          </Dialog.Positioner>
+        </Dialog.Root>
+      )}
+
+      {addingStockItem && (
+        <AddStockDialog
+          item={addingStockItem}
+          onConfirm={handleConfirmAddStock}
+          onCancel={handleCloseAddStockDialog}
+          isSubmitting={addStock.isPending}
+          errorMessage={getErrorMessage(addStock.isError, addStock.error, ERROR_GENERICO_AGREGAR)}
+        />
       )}
     </Stack>
   );

@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 
@@ -182,4 +182,114 @@ it("reactiva un producto con el switch y se ve prendido en la lista", async () =
   await user.click(switchInput);
 
   expect(await screen.findByRole("checkbox")).toBeChecked();
+});
+
+it("elimina un producto al confirmar en el diálogo", async () => {
+  let items = [HARINA];
+  server.use(
+    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
+    http.get(ITEMS_URL, () => HttpResponse.json(items)),
+    http.delete(`${ITEMS_URL}/:id`, () => {
+      items = [];
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: /eliminar/i }));
+  const dialog = await screen.findByRole("alertdialog");
+  await user.click(within(dialog).getByRole("button", { name: /eliminar/i }));
+
+  expect(await screen.findByText(/no tienes productos registrados/i)).toBeInTheDocument();
+});
+
+it("muestra el error del backend cuando la eliminación falla", async () => {
+  server.use(
+    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
+    http.get(ITEMS_URL, () => HttpResponse.json([HARINA])),
+    http.delete(`${ITEMS_URL}/:id`, () =>
+      HttpResponse.json(
+        {
+          error: "business_error",
+          message: "No se puede eliminar un producto que ya tiene movimientos de inventario",
+        },
+        { status: 422 },
+      ),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: /eliminar/i }));
+  const dialog = await screen.findByRole("alertdialog");
+  await user.click(within(dialog).getByRole("button", { name: /eliminar/i }));
+
+  expect(
+    await within(dialog).findByText(
+      "No se puede eliminar un producto que ya tiene movimientos de inventario",
+    ),
+  ).toBeInTheDocument();
+});
+
+it("no elimina el producto si cancelo el diálogo", async () => {
+  server.use(
+    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
+    http.get(ITEMS_URL, () => HttpResponse.json([HARINA])),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: /eliminar/i }));
+  await screen.findByRole("heading", { name: /eliminar harina/i });
+  await user.click(screen.getByRole("button", { name: /cancelar/i }));
+
+  expect(screen.queryByRole("heading", { name: /eliminar harina/i })).not.toBeInTheDocument();
+  expect(screen.getByText("Harina de trigo")).toBeInTheDocument();
+});
+
+it("agrega existencias a un producto y la fila queda actualizada", async () => {
+  let producto = { ...HARINA };
+  server.use(
+    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
+    http.get(ITEMS_URL, () => HttpResponse.json([producto])),
+    http.post(`${ITEMS_URL}/:id/stock-movements`, async ({ request }) => {
+      const data = (await request.json()) as { cantidad: string };
+      producto = { ...producto, existencias: (Number(producto.existencias) + Number(data.cantidad)).toFixed(4) };
+      return HttpResponse.json(producto);
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: /agregar existencias/i }));
+  const dialog = await screen.findByRole("dialog");
+  await user.type(within(dialog).getByLabelText(/cantidad/i), "5");
+  await user.click(within(dialog).getByRole("button", { name: /agregar/i }));
+
+  expect(await screen.findByText("15.0000")).toBeInTheDocument();
+});
+
+it("muestra el error del backend cuando la cantidad es inválida", async () => {
+  server.use(
+    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
+    http.get(ITEMS_URL, () => HttpResponse.json([HARINA])),
+    http.post(`${ITEMS_URL}/:id/stock-movements`, () =>
+      HttpResponse.json(
+        { error: "business_error", message: "La cantidad a agregar debe ser mayor a cero" },
+        { status: 422 },
+      ),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: /agregar existencias/i }));
+  const dialog = await screen.findByRole("dialog");
+  await user.type(within(dialog).getByLabelText(/cantidad/i), "-1");
+  await user.click(within(dialog).getByRole("button", { name: /agregar/i }));
+
+  expect(
+    await within(dialog).findByText("La cantidad a agregar debe ser mayor a cero"),
+  ).toBeInTheDocument();
 });

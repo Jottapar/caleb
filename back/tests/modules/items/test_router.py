@@ -239,6 +239,116 @@ def test_update_item_from_other_company_returns_404(logged_in_client, session):
     assert response.status_code == 404
 
 
+def test_add_stock_increases_existencias(logged_in_client, session):
+    created = logged_in_client.post(
+        URL,
+        json={"nombre": "Harina", "impuesto_id": _sin_impuesto_id(session), "cantidad_inicial": "5"},
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+
+    response = logged_in_client.post(
+        f"{URL}/{created['id']}/stock-movements",
+        json={"cantidad": "3"},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["existencias"] == "8.0000"
+
+
+def test_add_stock_rejects_zero_or_negative_quantity(logged_in_client, session):
+    created = logged_in_client.post(
+        URL,
+        json={"nombre": "Harina", "impuesto_id": _sin_impuesto_id(session)},
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+
+    response = logged_in_client.post(
+        f"{URL}/{created['id']}/stock-movements",
+        json={"cantidad": "-1"},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "business_error"
+    assert logged_in_client.get(URL).json()[0]["existencias"] == "0"
+
+
+def test_add_stock_from_other_company_returns_404(logged_in_client, session):
+    otra_empresa = Company(nombre="Otra Empresa")
+    session.add(otra_empresa)
+    session.flush()
+    otro_impuesto = Tax(empresa_id=otra_empresa.id, nombre="Sin impuesto", porcentaje=0)
+    session.add(otro_impuesto)
+    session.flush()
+    ajeno = items_service.create_item(
+        session, empresa_id=otra_empresa.id, nombre="Item Ajeno", impuesto_id=otro_impuesto.id
+    )
+
+    response = logged_in_client.post(
+        f"{URL}/{ajeno.id}/stock-movements",
+        json={"cantidad": "3"},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 404
+
+
+def test_delete_item_returns_204_and_removes_it(logged_in_client, session):
+    created = logged_in_client.post(
+        URL,
+        json={"nombre": "Harina", "impuesto_id": _sin_impuesto_id(session)},
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+
+    response = logged_in_client.delete(
+        f"{URL}/{created['id']}", headers=_csrf_headers(logged_in_client)
+    )
+
+    assert response.status_code == 204
+    nombres = [item["nombre"] for item in logged_in_client.get(URL).json()]
+    assert "Harina" not in nombres
+
+
+def test_delete_item_from_other_company_returns_404(logged_in_client, session):
+    otra_empresa = Company(nombre="Otra Empresa")
+    session.add(otra_empresa)
+    session.flush()
+    otro_impuesto = Tax(empresa_id=otra_empresa.id, nombre="Sin impuesto", porcentaje=0)
+    session.add(otro_impuesto)
+    session.flush()
+    ajeno = items_service.create_item(
+        session, empresa_id=otra_empresa.id, nombre="Item Ajeno", impuesto_id=otro_impuesto.id
+    )
+
+    response = logged_in_client.delete(
+        f"{URL}/{ajeno.id}", headers=_csrf_headers(logged_in_client)
+    )
+
+    assert response.status_code == 404
+
+
+def test_delete_item_with_movements_rejects_deletion(logged_in_client, session):
+    created = logged_in_client.post(
+        URL,
+        json={
+            "nombre": "Harina",
+            "impuesto_id": _sin_impuesto_id(session),
+            "cantidad_inicial": "5",
+        },
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+
+    response = logged_in_client.delete(
+        f"{URL}/{created['id']}", headers=_csrf_headers(logged_in_client)
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "business_error"
+    nombres = [item["nombre"] for item in logged_in_client.get(URL).json()]
+    assert "Harina" in nombres
+
+
 def test_update_item_can_deactivate(logged_in_client, session):
     created = logged_in_client.post(
         URL,

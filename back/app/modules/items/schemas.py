@@ -23,6 +23,10 @@ class ItemUpdate(SQLModel):
     activo: bool | None = None
 
 
+class StockMovementCreate(SQLModel):
+    cantidad: Decimal
+
+
 class ItemRead(SQLModel):
     id: int
     codigo: str

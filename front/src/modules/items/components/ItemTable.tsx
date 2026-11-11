@@ -6,9 +6,11 @@ type Props = {
   items: Item[];
   onEdit: (item: Item) => void;
   onToggleActive: (item: Item, activo: boolean) => void;
+  onDelete: (item: Item) => void;
+  onAddStock: (item: Item) => void;
 };
 
-export function ItemTable({ items, onEdit, onToggleActive }: Props) {
+export function ItemTable({ items, onEdit, onToggleActive, onDelete, onAddStock }: Props) {
   return (
     <Table.Root>
       <Table.Header>
@@ -42,8 +44,19 @@ export function ItemTable({ items, onEdit, onToggleActive }: Props) {
               </Switch.Root>
             </Table.Cell>
             <Table.Cell>
+              <Button size="sm" variant="ghost" onClick={() => onAddStock(item)}>
+                Agregar existencias
+              </Button>
               <Button size="sm" variant="ghost" onClick={() => onEdit(item)}>
                 Editar
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                colorPalette="red"
+                onClick={() => onDelete(item)}
+              >
+                Eliminar
               </Button>
             </Table.Cell>
           </Table.Row>

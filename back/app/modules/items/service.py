@@ -130,3 +130,36 @@ def update_item(session: Session, item_id: int, data: ItemUpdate, empresa_id: in
     session.commit()
     session.refresh(item)
     return _with_stock(session, item)
+
+
+def add_stock(session: Session, item_id: int, empresa_id: int, cantidad: Decimal) -> ItemRead:
+    if cantidad <= 0:
+        raise BusinessError("La cantidad a agregar debe ser mayor a cero")
+
+    item = get_by_id(session, item_id, empresa_id)
+    session.add(
+        InventoryMovement(
+            empresa_id=empresa_id,
+            item_id=item.id,
+            tipo="entrada",
+            cantidad=cantidad,
+            costo_unitario=item.costo,
+            origen="ajuste_manual",
+            origen_id=item.id,
+        )
+    )
+    session.commit()
+    session.refresh(item)
+    return _with_stock(session, item)
+
+
+def delete_item(session: Session, item_id: int, empresa_id: int) -> None:
+    item = get_by_id(session, item_id, empresa_id)
+    tiene_movimientos = session.exec(
+        select(InventoryMovement.id).where(InventoryMovement.item_id == item_id).limit(1)
+    ).first()
+    if tiene_movimientos:
+        raise BusinessError("No se puede eliminar un producto que ya tiene movimientos de inventario")
+
+    session.delete(item)
+    session.commit()
