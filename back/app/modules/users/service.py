@@ -24,8 +24,11 @@ def create_company_with_owner(
 
 
 def get_active_user(session: Session, user_id: int) -> User | None:
-    """Unico lugar que define que es un "usuario activo": lo usan el login,
-    el subject getter de AuthX y el refresh, para no repetir el chequeo.
+    """Busca por id un usuario que siga activo, o None.
+
+    Unico lugar que define eso para las peticiones ya autenticadas: lo usan el
+    subject getter de AuthX y el refresh. El login no lo usa porque busca por
+    correo, no por id.
     """
     user = session.get(User, user_id)
     return user if user and user.activo else None
