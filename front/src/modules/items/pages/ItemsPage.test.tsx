@@ -75,3 +75,69 @@ it("registra un producto y aparece en la lista", async () => {
 
   expect(await screen.findByText("Harina de trigo")).toBeInTheDocument();
 });
+
+const HARINA = {
+  id: 1,
+  codigo: "HAR-001",
+  nombre: "Harina de trigo",
+  unidad: "und",
+  costo: "2000.00",
+  precio_venta: "3500.00",
+  impuesto_id: 1,
+  se_vende: true,
+  es_insumo: false,
+  activo: true,
+  existencias: "10.0000",
+};
+
+it("abre el drawer con los datos del producto al hacer click en Editar", async () => {
+  server.use(
+    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
+    http.get(ITEMS_URL, () => HttpResponse.json([HARINA])),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: /editar/i }));
+
+  expect(await screen.findByRole("heading", { name: /editar producto/i })).toBeInTheDocument();
+  expect(screen.getAllByDisplayValue("Harina de trigo")).toHaveLength(1);
+});
+
+it("guarda la edición y la fila de la tabla queda actualizada", async () => {
+  let producto = { ...HARINA };
+  server.use(
+    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
+    http.get(ITEMS_URL, () => HttpResponse.json([producto])),
+    http.patch(`${ITEMS_URL}/:id`, async ({ request }) => {
+      const data = (await request.json()) as Record<string, unknown>;
+      producto = { ...producto, ...data };
+      return HttpResponse.json(producto);
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: /editar/i }));
+  const nombreInput = await screen.findByDisplayValue("Harina de trigo");
+  await user.clear(nombreInput);
+  await user.type(nombreInput, "Harina Actualizada");
+  await user.click(screen.getByRole("button", { name: /guardar/i }));
+
+  expect(await screen.findByText("Harina Actualizada")).toBeInTheDocument();
+});
+
+it("cierra el drawer sin guardar al hacer click en Cerrar", async () => {
+  server.use(
+    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
+    http.get(ITEMS_URL, () => HttpResponse.json([HARINA])),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: /editar/i }));
+  await screen.findByRole("heading", { name: /editar producto/i });
+  await user.click(screen.getByRole("button", { name: /cerrar/i }));
+
+  expect(screen.queryByRole("heading", { name: /editar producto/i })).not.toBeInTheDocument();
+});

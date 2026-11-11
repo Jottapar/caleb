@@ -21,3 +21,10 @@ export type ItemCreate = {
   precio_venta?: string;
   cantidad_inicial?: string;
 };
+
+export type ItemUpdate = {
+  nombre?: string;
+  costo?: string;
+  precio_venta?: string;
+  impuesto_id?: number;
+};

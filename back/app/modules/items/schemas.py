@@ -15,6 +15,13 @@ class ItemCreate(SQLModel):
     cantidad_inicial: Decimal = Decimal(0)
 
 
+class ItemUpdate(SQLModel):
+    nombre: str | None = None
+    costo: Decimal | None = None
+    precio_venta: Decimal | None = None
+    impuesto_id: int | None = None
+
+
 class ItemRead(SQLModel):
     id: int
     codigo: str

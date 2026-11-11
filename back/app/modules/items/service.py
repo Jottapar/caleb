@@ -5,7 +5,7 @@ from sqlmodel import Session, select
 
 from app.core.errors import BusinessError, NotFoundError
 from app.modules.items.models import InventoryMovement, Item
-from app.modules.items.schemas import ItemRead
+from app.modules.items.schemas import ItemRead, ItemUpdate
 from app.modules.taxes.models import Tax
 
 
@@ -107,3 +107,26 @@ def create_item(
 def list_items(session: Session, empresa_id: int) -> list[ItemRead]:
     items = session.exec(select(Item).where(Item.empresa_id == empresa_id)).all()
     return [_with_stock(session, item) for item in items]
+
+
+def get_by_id(session: Session, item_id: int, empresa_id: int) -> Item:
+    item = session.exec(
+        select(Item).where(Item.id == item_id, Item.empresa_id == empresa_id)
+    ).first()
+    if not item:
+        raise NotFoundError("Producto", item_id)
+    return item
+
+
+def update_item(session: Session, item_id: int, data: ItemUpdate, empresa_id: int) -> ItemRead:
+    item = get_by_id(session, item_id, empresa_id)
+    cambios = data.model_dump(exclude_unset=True)
+    _validate_item(cambios.get("nombre", item.nombre), item.se_vende, item.es_insumo)
+    if "impuesto_id" in cambios:
+        _validate_tax(session, cambios["impuesto_id"], empresa_id)
+
+    item.sqlmodel_update(cambios)
+    session.add(item)
+    session.commit()
+    session.refresh(item)
+    return _with_stock(session, item)

@@ -1,12 +1,13 @@
-import { Table } from "@chakra-ui/react";
+import { Button, Table } from "@chakra-ui/react";
 
 import type { Item } from "../types";
 
 type Props = {
   items: Item[];
+  onEdit: (item: Item) => void;
 };
 
-export function ItemTable({ items }: Props) {
+export function ItemTable({ items, onEdit }: Props) {
   return (
     <Table.Root>
       <Table.Header>
@@ -16,6 +17,7 @@ export function ItemTable({ items }: Props) {
           <Table.ColumnHeader>Costo</Table.ColumnHeader>
           <Table.ColumnHeader>Precio de venta</Table.ColumnHeader>
           <Table.ColumnHeader>Existencias</Table.ColumnHeader>
+          <Table.ColumnHeader></Table.ColumnHeader>
         </Table.Row>
       </Table.Header>
       <Table.Body>
@@ -26,6 +28,11 @@ export function ItemTable({ items }: Props) {
             <Table.Cell>{item.costo}</Table.Cell>
             <Table.Cell>{item.precio_venta}</Table.Cell>
             <Table.Cell>{item.existencias}</Table.Cell>
+            <Table.Cell>
+              <Button size="sm" variant="ghost" onClick={() => onEdit(item)}>
+                Editar
+              </Button>
+            </Table.Cell>
           </Table.Row>
         ))}
       </Table.Body>

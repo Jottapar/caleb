@@ -2,27 +2,38 @@ import { Button, Field, HStack, Input, NativeSelect, Stack, Text } from "@chakra
 import { useState } from "react";
 
 import { useTaxes } from "../../taxes/hooks/useTaxes";
-import type { ItemCreate } from "../types";
+import type { Item, ItemCreate, ItemUpdate } from "../types";
 
 type Props = {
-  onSubmit: (data: ItemCreate) => void;
+  initialValues?: Item;
+  onSubmit: (data: ItemCreate | ItemUpdate) => void;
+  onCancel?: () => void;
   isSubmitting: boolean;
   errorMessage: string | null;
 };
 
-export function ItemForm({ onSubmit, isSubmitting, errorMessage }: Props) {
+export function ItemForm({ initialValues, onSubmit, onCancel, isSubmitting, errorMessage }: Props) {
   const taxes = useTaxes();
-  const [nombre, setNombre] = useState("");
+  const [nombre, setNombre] = useState(initialValues?.nombre ?? "");
   const [codigo, setCodigo] = useState("");
-  const [costo, setCosto] = useState("");
-  const [precioVenta, setPrecioVenta] = useState("");
+  const [costo, setCosto] = useState(initialValues?.costo ?? "");
+  const [precioVenta, setPrecioVenta] = useState(initialValues?.precio_venta ?? "");
   const [cantidadInicial, setCantidadInicial] = useState("");
-  const [impuestoId, setImpuestoId] = useState("");
+  const [impuestoId, setImpuestoId] = useState(initialValues?.impuesto_id.toString() ?? "");
 
   const impuestoSeleccionado = impuestoId || taxes.data?.[0]?.id.toString() || "";
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
+    if (initialValues) {
+      onSubmit({
+        nombre,
+        costo,
+        precio_venta: precioVenta,
+        impuesto_id: Number(impuestoSeleccionado),
+      });
+      return;
+    }
     onSubmit({
       nombre,
       codigo,
@@ -45,10 +56,12 @@ export function ItemForm({ onSubmit, isSubmitting, errorMessage }: Props) {
         <Input value={nombre} onChange={(event) => setNombre(event.target.value)} />
       </Field.Root>
 
-      <Field.Root>
-        <Field.Label>Código</Field.Label>
-        <Input value={codigo} onChange={(event) => setCodigo(event.target.value)} />
-      </Field.Root>
+      {!initialValues && (
+        <Field.Root>
+          <Field.Label>Código</Field.Label>
+          <Input value={codigo} onChange={(event) => setCodigo(event.target.value)} />
+        </Field.Root>
+      )}
 
       <Field.Root>
         <Field.Label>Costo</Field.Label>
@@ -60,13 +73,15 @@ export function ItemForm({ onSubmit, isSubmitting, errorMessage }: Props) {
         <Input value={precioVenta} onChange={(event) => setPrecioVenta(event.target.value)} />
       </Field.Root>
 
-      <Field.Root>
-        <Field.Label>Cantidad inicial</Field.Label>
-        <Input
-          value={cantidadInicial}
-          onChange={(event) => setCantidadInicial(event.target.value)}
-        />
-      </Field.Root>
+      {!initialValues && (
+        <Field.Root>
+          <Field.Label>Cantidad inicial</Field.Label>
+          <Input
+            value={cantidadInicial}
+            onChange={(event) => setCantidadInicial(event.target.value)}
+          />
+        </Field.Root>
+      )}
 
       <Field.Root required>
         <Field.Label>Impuesto</Field.Label>
@@ -90,6 +105,11 @@ export function ItemForm({ onSubmit, isSubmitting, errorMessage }: Props) {
         <Button type="submit" colorPalette="brand" loading={isSubmitting}>
           Guardar
         </Button>
+        {onCancel && (
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cerrar
+          </Button>
+        )}
       </HStack>
     </Stack>
   );

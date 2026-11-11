@@ -4,7 +4,7 @@ from app.core.database import SessionDep
 from app.core.security import auth
 from app.modules.auth.dependencies import CurrentCompanyId
 from app.modules.items import service
-from app.modules.items.schemas import ItemCreate, ItemRead
+from app.modules.items.schemas import ItemCreate, ItemRead, ItemUpdate
 
 router = APIRouter(
     prefix="/items",
@@ -21,3 +21,8 @@ def create_item(data: ItemCreate, session: SessionDep, empresa_id: CurrentCompan
 @router.get("", response_model=list[ItemRead])
 def list_items(session: SessionDep, empresa_id: CurrentCompanyId):
     return service.list_items(session, empresa_id)
+
+
+@router.patch("/{item_id}", response_model=ItemRead)
+def update_item(item_id: int, data: ItemUpdate, session: SessionDep, empresa_id: CurrentCompanyId):
+    return service.update_item(session, item_id, data, empresa_id)

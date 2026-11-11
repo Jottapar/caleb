@@ -179,3 +179,99 @@ def test_create_item_rejects_both_se_vende_and_es_insumo_false(logged_in_client,
 
     assert response.status_code == 422
     assert response.json()["error"] == "business_error"
+
+
+def test_update_item_returns_200_and_updated_data(logged_in_client, session):
+    impuesto_id = _sin_impuesto_id(session)
+    created = logged_in_client.post(
+        URL,
+        json={"nombre": "Harina", "impuesto_id": impuesto_id},
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+
+    response = logged_in_client.patch(
+        f"{URL}/{created['id']}",
+        json={"nombre": "Harina de trigo", "costo": "2500", "precio_venta": "4000"},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["nombre"] == "Harina de trigo"
+    assert body["costo"] == "2500.00"
+    assert body["precio_venta"] == "4000.00"
+
+
+def test_update_item_rejects_unknown_tax(logged_in_client, session):
+    created = logged_in_client.post(
+        URL,
+        json={"nombre": "Harina", "impuesto_id": _sin_impuesto_id(session)},
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+
+    response = logged_in_client.patch(
+        f"{URL}/{created['id']}",
+        json={"impuesto_id": 99999},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "business_error"
+
+
+def test_update_item_from_other_company_returns_404(logged_in_client, session):
+    otra_empresa = Company(nombre="Otra Empresa")
+    session.add(otra_empresa)
+    session.flush()
+    otro_impuesto = Tax(empresa_id=otra_empresa.id, nombre="Sin impuesto", porcentaje=0)
+    session.add(otro_impuesto)
+    session.flush()
+    ajeno = items_service.create_item(
+        session, empresa_id=otra_empresa.id, nombre="Item Ajeno", impuesto_id=otro_impuesto.id
+    )
+
+    response = logged_in_client.patch(
+        f"{URL}/{ajeno.id}",
+        json={"nombre": "Intento de cambio"},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 404
+
+
+def test_update_item_only_changes_sent_fields(logged_in_client, session):
+    impuesto_id = _sin_impuesto_id(session)
+    created = logged_in_client.post(
+        URL,
+        json={"codigo": "HAR-001", "nombre": "Harina", "costo": "2000", "impuesto_id": impuesto_id},
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+
+    response = logged_in_client.patch(
+        f"{URL}/{created['id']}",
+        json={"nombre": "Harina de trigo"},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["nombre"] == "Harina de trigo"
+    assert body["codigo"] == "HAR-001"
+    assert body["costo"] == "2000.00"
+
+
+def test_update_item_rejects_empty_name(logged_in_client, session):
+    created = logged_in_client.post(
+        URL,
+        json={"nombre": "Harina", "impuesto_id": _sin_impuesto_id(session)},
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+
+    response = logged_in_client.patch(
+        f"{URL}/{created['id']}",
+        json={"nombre": "   "},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "business_error"
