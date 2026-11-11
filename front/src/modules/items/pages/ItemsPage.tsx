@@ -30,6 +30,10 @@ export function ItemsPage() {
     createItem.mutate(data);
   }
 
+  function handleToggleActive(item: Item, activo: boolean) {
+    updateItem.mutate({ id: item.id, data: { activo } });
+  }
+
   function handleUpdate(data: ItemUpdate) {
     if (!editingItem) {
       return;
@@ -60,7 +64,11 @@ export function ItemsPage() {
       )}
 
       {items.data && items.data.length > 0 && (
-        <ItemTable items={items.data} onEdit={setEditingItem} />
+        <ItemTable
+          items={items.data}
+          onEdit={setEditingItem}
+          onToggleActive={handleToggleActive}
+        />
       )}
 
       {editingItem && (

@@ -141,3 +141,45 @@ it("cierra el drawer sin guardar al hacer click en Cerrar", async () => {
 
   expect(screen.queryByRole("heading", { name: /editar producto/i })).not.toBeInTheDocument();
 });
+
+it("desactiva un producto con el switch y se ve apagado en la lista", async () => {
+  let producto = { ...HARINA };
+  server.use(
+    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
+    http.get(ITEMS_URL, () => HttpResponse.json([producto])),
+    http.patch(`${ITEMS_URL}/:id`, async ({ request }) => {
+      const data = (await request.json()) as Record<string, unknown>;
+      producto = { ...producto, ...data };
+      return HttpResponse.json(producto);
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  const switchInput = await screen.findByRole("checkbox");
+  expect(switchInput).toBeChecked();
+  await user.click(switchInput);
+
+  expect(await screen.findByRole("checkbox")).not.toBeChecked();
+});
+
+it("reactiva un producto con el switch y se ve prendido en la lista", async () => {
+  let producto = { ...HARINA, activo: false };
+  server.use(
+    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
+    http.get(ITEMS_URL, () => HttpResponse.json([producto])),
+    http.patch(`${ITEMS_URL}/:id`, async ({ request }) => {
+      const data = (await request.json()) as Record<string, unknown>;
+      producto = { ...producto, ...data };
+      return HttpResponse.json(producto);
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  const switchInput = await screen.findByRole("checkbox");
+  expect(switchInput).not.toBeChecked();
+  await user.click(switchInput);
+
+  expect(await screen.findByRole("checkbox")).toBeChecked();
+});

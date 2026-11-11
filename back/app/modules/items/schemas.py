@@ -20,6 +20,7 @@ class ItemUpdate(SQLModel):
     costo: Decimal | None = None
     precio_venta: Decimal | None = None
     impuesto_id: int | None = None
+    activo: bool | None = None
 
 
 class ItemRead(SQLModel):

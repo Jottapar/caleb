@@ -27,4 +27,5 @@ export type ItemUpdate = {
   costo?: string;
   precio_venta?: string;
   impuesto_id?: number;
+  activo?: boolean;
 };
