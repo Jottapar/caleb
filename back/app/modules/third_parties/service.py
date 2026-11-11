@@ -70,3 +70,9 @@ def update_third_party(
     session.commit()
     session.refresh(third_party)
     return third_party
+
+
+def delete_third_party(session: Session, third_party_id: int, empresa_id: int) -> None:
+    third_party = get_by_id(session, third_party_id, empresa_id)
+    session.delete(third_party)
+    session.commit()

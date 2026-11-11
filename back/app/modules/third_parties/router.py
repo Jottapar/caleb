@@ -28,3 +28,8 @@ def update_third_party(
     third_party_id: int, data: ThirdPartyUpdate, session: SessionDep, empresa_id: CurrentCompanyId
 ):
     return service.update_third_party(session, third_party_id, data, empresa_id)
+
+
+@router.delete("/{third_party_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_third_party(third_party_id: int, session: SessionDep, empresa_id: CurrentCompanyId):
+    service.delete_third_party(session, third_party_id, empresa_id)

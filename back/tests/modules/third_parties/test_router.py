@@ -182,6 +182,37 @@ def test_update_third_party_from_other_company_returns_404(logged_in_client, ses
     assert response.status_code == 404
 
 
+def test_delete_third_party_returns_204_and_removes_it(logged_in_client):
+    created = logged_in_client.post(
+        URL,
+        json={"tipo": "cliente", "nombre": "Carlos"},
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+
+    response = logged_in_client.delete(
+        f"{URL}/{created['id']}", headers=_csrf_headers(logged_in_client)
+    )
+
+    assert response.status_code == 204
+    nombres = [tercero["nombre"] for tercero in logged_in_client.get(URL).json()]
+    assert "Carlos" not in nombres
+
+
+def test_delete_third_party_from_other_company_returns_404(logged_in_client, session):
+    otra_empresa = Company(nombre="Otra Empresa")
+    session.add(otra_empresa)
+    session.flush()
+    ajeno = third_parties_service.create_third_party(
+        session, empresa_id=otra_empresa.id, tipo="cliente", nombre="Tercero Ajeno"
+    )
+
+    response = logged_in_client.delete(
+        f"{URL}/{ajeno.id}", headers=_csrf_headers(logged_in_client)
+    )
+
+    assert response.status_code == 404
+
+
 def test_update_third_party_can_deactivate(logged_in_client):
     created = logged_in_client.post(
         URL,

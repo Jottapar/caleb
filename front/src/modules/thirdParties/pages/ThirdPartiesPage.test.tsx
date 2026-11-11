@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 
@@ -173,4 +173,56 @@ it("cierra el drawer sin guardar al hacer click en Cerrar", async () => {
   await user.click(screen.getByRole("button", { name: /cerrar/i }));
 
   expect(screen.queryByRole("heading", { name: /editar tercero/i })).not.toBeInTheDocument();
+});
+
+it("elimina un tercero al confirmar en el dialogo", async () => {
+  let terceros = [ANA];
+  server.use(
+    http.get(URL, () => HttpResponse.json(terceros)),
+    http.delete(`${URL}/:id`, () => {
+      terceros = [];
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: /eliminar/i }));
+  const dialog = await screen.findByRole("alertdialog");
+  await user.click(within(dialog).getByRole("button", { name: /eliminar/i }));
+
+  expect(await screen.findByText(/no tienes terceros registrados/i)).toBeInTheDocument();
+});
+
+it("muestra el error del backend cuando la eliminacion falla", async () => {
+  server.use(
+    http.get(URL, () => HttpResponse.json([ANA])),
+    http.delete(`${URL}/:id`, () =>
+      HttpResponse.json(
+        { error: "not_found", message: "Tercero no encontrado" },
+        { status: 404 },
+      ),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: /eliminar/i }));
+  const dialog = await screen.findByRole("alertdialog");
+  await user.click(within(dialog).getByRole("button", { name: /eliminar/i }));
+
+  expect(await within(dialog).findByText("Tercero no encontrado")).toBeInTheDocument();
+});
+
+it("no elimina el tercero si cancelo el dialogo", async () => {
+  server.use(http.get(URL, () => HttpResponse.json([ANA])));
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: /eliminar/i }));
+  await screen.findByRole("heading", { name: /eliminar a ana/i });
+  await user.click(screen.getByRole("button", { name: /cancelar/i }));
+
+  expect(screen.queryByRole("heading", { name: /eliminar a ana/i })).not.toBeInTheDocument();
+  expect(screen.getByText("Ana Pérez")).toBeInTheDocument();
 });

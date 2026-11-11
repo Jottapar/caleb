@@ -6,9 +6,10 @@ type Props = {
   thirdParties: ThirdParty[];
   onEdit: (thirdParty: ThirdParty) => void;
   onToggleActive: (thirdParty: ThirdParty, activo: boolean) => void;
+  onDelete: (thirdParty: ThirdParty) => void;
 };
 
-export function ThirdPartyTable({ thirdParties, onEdit, onToggleActive }: Props) {
+export function ThirdPartyTable({ thirdParties, onEdit, onToggleActive, onDelete }: Props) {
   return (
     <Table.Root>
       <Table.Header>
@@ -44,6 +45,14 @@ export function ThirdPartyTable({ thirdParties, onEdit, onToggleActive }: Props)
             <Table.Cell>
               <Button size="sm" variant="ghost" onClick={() => onEdit(thirdParty)}>
                 Editar
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                colorPalette="red"
+                onClick={() => onDelete(thirdParty)}
+              >
+                Eliminar
               </Button>
             </Table.Cell>
           </Table.Row>
