@@ -12,7 +12,15 @@ export function LogoutButton() {
   }
 
   return (
-    <Button variant="ghost" loading={logout.isPending} onClick={handleClick}>
+    // Se pinta en el encabezado oscuro de Layout: sin estos colores, el
+    // "ghost" por defecto usaria texto oscuro sobre un fondo oscuro.
+    <Button
+      variant="ghost"
+      color="white"
+      _hover={{ bg: "whiteAlpha.200" }}
+      loading={logout.isPending}
+      onClick={handleClick}
+    >
       Cerrar sesión
     </Button>
   );

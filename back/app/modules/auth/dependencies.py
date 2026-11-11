@@ -4,6 +4,7 @@ from fastapi import Depends
 from sqlmodel import Session
 
 from app.core import database
+from app.core.database import SessionDep
 from app.core.errors import UnauthorizedError
 from app.core.security import auth
 from app.modules.auth.service import CREDENCIALES_INVALIDAS
@@ -30,3 +31,10 @@ def get_current_user(user: User | None = Depends(auth.get_current_subject)) -> U
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+def get_current_company_id(current_user: CurrentUser, session: SessionDep) -> int:
+    return users_service.get_company_id(session, current_user.id)
+
+
+CurrentCompanyId = Annotated[int, Depends(get_current_company_id)]

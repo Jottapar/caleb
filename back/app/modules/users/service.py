@@ -23,6 +23,14 @@ def create_company_with_owner(
     session.commit()
 
 
+def get_company_id(session: Session, user_id: int) -> int:
+    """La empresa del usuario. El MVP es un usuario = una empresa, por eso basta la primera fila."""
+    user_company = session.exec(
+        select(UserCompany).where(UserCompany.usuario_id == user_id)
+    ).first()
+    return user_company.empresa_id
+
+
 def get_active_user(session: Session, user_id: int) -> User | None:
     """Busca por id un usuario que siga activo, o None.
 

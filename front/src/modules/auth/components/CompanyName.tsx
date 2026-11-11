@@ -10,7 +10,9 @@ export function CompanyName() {
   }
 
   return (
-    <Text color="fg.muted" fontSize="sm">
+    // Se pinta en el encabezado oscuro de Layout: "fg.muted" quedaria
+    // ilegible ahi, por eso usa un blanco atenuado en vez del token semantico.
+    <Text color="whiteAlpha.800" fontSize="sm">
       {data.company_name}
     </Text>
   );

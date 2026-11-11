@@ -22,7 +22,7 @@ it("entra con credenciales correctas y navega a la pantalla protegida", async ()
 
   await user.type(screen.getByLabelText(/correo/i), "johan@example.com");
   await user.type(screen.getByLabelText(/contraseña/i), "una-clave-segura");
-  await user.click(screen.getByRole("button", { name: /iniciar sesión/i }));
+  await user.click(screen.getByRole("button", { name: /ingresar/i }));
 
   expect(await screen.findByText("Pantalla protegida")).toBeInTheDocument();
 });
@@ -48,7 +48,7 @@ it("muestra el mensaje genérico y se queda en login cuando las credenciales son
 
   await user.type(screen.getByLabelText(/correo/i), "johan@example.com");
   await user.type(screen.getByLabelText(/contraseña/i), "otra-clave");
-  await user.click(screen.getByRole("button", { name: /iniciar sesión/i }));
+  await user.click(screen.getByRole("button", { name: /ingresar/i }));
 
   expect(await screen.findByText("Correo o contraseña incorrectos")).toBeInTheDocument();
   expect(screen.queryByText("Pantalla protegida")).not.toBeInTheDocument();
