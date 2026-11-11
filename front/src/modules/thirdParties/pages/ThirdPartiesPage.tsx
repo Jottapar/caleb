@@ -1,36 +1,53 @@
-import { Center, Heading, Spinner, Stack, Text } from "@chakra-ui/react";
+import { Center, Drawer, Heading, Spinner, Stack, Text } from "@chakra-ui/react";
 import { isAxiosError } from "axios";
+import { useState } from "react";
 
 import { ThirdPartyForm } from "../components/ThirdPartyForm";
 import { ThirdPartyTable } from "../components/ThirdPartyTable";
 import { useCreateThirdParty } from "../hooks/useCreateThirdParty";
 import { useThirdParties } from "../hooks/useThirdParties";
-import type { ThirdPartyCreate } from "../types";
+import { useUpdateThirdParty } from "../hooks/useUpdateThirdParty";
+import type { ThirdParty, ThirdPartyCreate } from "../types";
 
 const ERROR_GENERICO = "No se pudo guardar el tercero. Intenta de nuevo.";
+
+function getErrorMessage(isError: boolean, error: unknown) {
+  if (!isError) {
+    return null;
+  }
+  return isAxiosError(error) && error.response?.data?.message
+    ? error.response.data.message
+    : ERROR_GENERICO;
+}
 
 export function ThirdPartiesPage() {
   const thirdParties = useThirdParties();
   const createThirdParty = useCreateThirdParty();
+  const updateThirdParty = useUpdateThirdParty();
+  const [editingThirdParty, setEditingThirdParty] = useState<ThirdParty | null>(null);
 
-  function handleSubmit(data: ThirdPartyCreate) {
+  function handleCreate(data: ThirdPartyCreate) {
     createThirdParty.mutate(data);
   }
 
-  const errorMessage = createThirdParty.isError
-    ? isAxiosError(createThirdParty.error) && createThirdParty.error.response?.data?.message
-      ? createThirdParty.error.response.data.message
-      : ERROR_GENERICO
-    : null;
+  function handleUpdate(data: ThirdPartyCreate) {
+    if (!editingThirdParty) {
+      return;
+    }
+    updateThirdParty.mutate(
+      { id: editingThirdParty.id, data },
+      { onSuccess: () => setEditingThirdParty(null) },
+    );
+  }
 
   return (
     <Stack gap="6">
       <Heading size="xl">Clientes y proveedores</Heading>
 
       <ThirdPartyForm
-        onSubmit={handleSubmit}
+        onSubmit={handleCreate}
         isSubmitting={createThirdParty.isPending}
-        errorMessage={errorMessage}
+        errorMessage={getErrorMessage(createThirdParty.isError, createThirdParty.error)}
       />
 
       {thirdParties.isPending && (
@@ -48,7 +65,34 @@ export function ThirdPartiesPage() {
       )}
 
       {thirdParties.data && thirdParties.data.length > 0 && (
-        <ThirdPartyTable thirdParties={thirdParties.data} />
+        <ThirdPartyTable thirdParties={thirdParties.data} onEdit={setEditingThirdParty} />
+      )}
+
+      {editingThirdParty && (
+        <Drawer.Root
+          placement="end"
+          open
+          onOpenChange={(details) => !details.open && setEditingThirdParty(null)}
+        >
+          <Drawer.Backdrop />
+          <Drawer.Positioner>
+            <Drawer.Content>
+              <Drawer.Header>
+                <Drawer.Title>Editar tercero</Drawer.Title>
+              </Drawer.Header>
+              <Drawer.Body>
+                <ThirdPartyForm
+                  key={editingThirdParty.id}
+                  initialValues={editingThirdParty}
+                  onSubmit={handleUpdate}
+                  onCancel={() => setEditingThirdParty(null)}
+                  isSubmitting={updateThirdParty.isPending}
+                  errorMessage={getErrorMessage(updateThirdParty.isError, updateThirdParty.error)}
+                />
+              </Drawer.Body>
+            </Drawer.Content>
+          </Drawer.Positioner>
+        </Drawer.Root>
       )}
     </Stack>
   );

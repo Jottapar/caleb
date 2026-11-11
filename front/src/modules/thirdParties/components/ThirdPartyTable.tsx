@@ -1,12 +1,13 @@
-import { Table } from "@chakra-ui/react";
+import { Button, Table } from "@chakra-ui/react";
 
 import type { ThirdParty } from "../types";
 
 type Props = {
   thirdParties: ThirdParty[];
+  onEdit: (thirdParty: ThirdParty) => void;
 };
 
-export function ThirdPartyTable({ thirdParties }: Props) {
+export function ThirdPartyTable({ thirdParties, onEdit }: Props) {
   return (
     <Table.Root>
       <Table.Header>
@@ -17,6 +18,7 @@ export function ThirdPartyTable({ thirdParties }: Props) {
           <Table.ColumnHeader>Correo</Table.ColumnHeader>
           <Table.ColumnHeader>Teléfono</Table.ColumnHeader>
           <Table.ColumnHeader>Activo</Table.ColumnHeader>
+          <Table.ColumnHeader></Table.ColumnHeader>
         </Table.Row>
       </Table.Header>
       <Table.Body>
@@ -28,6 +30,11 @@ export function ThirdPartyTable({ thirdParties }: Props) {
             <Table.Cell>{thirdParty.email}</Table.Cell>
             <Table.Cell>{thirdParty.telefono}</Table.Cell>
             <Table.Cell>{thirdParty.activo ? "Sí" : "No"}</Table.Cell>
+            <Table.Cell>
+              <Button size="sm" variant="ghost" onClick={() => onEdit(thirdParty)}>
+                Editar
+              </Button>
+            </Table.Cell>
           </Table.Row>
         ))}
       </Table.Body>

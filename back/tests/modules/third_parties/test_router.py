@@ -91,3 +91,92 @@ def test_create_third_party_requires_authentication(client):
     response = client.post(URL, json={"tipo": "cliente", "nombre": "Carlos"})
 
     assert response.status_code == 401
+
+
+def test_update_third_party_returns_200_and_updated_data(logged_in_client):
+    created = logged_in_client.post(
+        URL,
+        json={"tipo": "cliente", "nombre": "Carlos"},
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+
+    response = logged_in_client.patch(
+        f"{URL}/{created['id']}",
+        json={"tipo": "proveedor", "nombre": "Carlos Actualizado"},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["tipo"] == "proveedor"
+    assert body["nombre"] == "Carlos Actualizado"
+
+
+def test_update_third_party_only_changes_sent_fields(logged_in_client):
+    created = logged_in_client.post(
+        URL,
+        json={"tipo": "cliente", "nombre": "Carlos", "documento": "999"},
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+
+    response = logged_in_client.patch(
+        f"{URL}/{created['id']}",
+        json={"nombre": "Carlos Actualizado"},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["nombre"] == "Carlos Actualizado"
+    assert body["documento"] == "999"
+
+
+def test_update_third_party_rejects_invalid_type(logged_in_client):
+    created = logged_in_client.post(
+        URL,
+        json={"tipo": "cliente", "nombre": "Carlos"},
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+
+    response = logged_in_client.patch(
+        f"{URL}/{created['id']}",
+        json={"tipo": "socio"},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "business_error"
+
+
+def test_update_third_party_rejects_empty_name(logged_in_client):
+    created = logged_in_client.post(
+        URL,
+        json={"tipo": "cliente", "nombre": "Carlos"},
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+
+    response = logged_in_client.patch(
+        f"{URL}/{created['id']}",
+        json={"nombre": "   "},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "business_error"
+
+
+def test_update_third_party_from_other_company_returns_404(logged_in_client, session):
+    otra_empresa = Company(nombre="Otra Empresa")
+    session.add(otra_empresa)
+    session.flush()
+    ajeno = third_parties_service.create_third_party(
+        session, empresa_id=otra_empresa.id, tipo="cliente", nombre="Tercero Ajeno"
+    )
+
+    response = logged_in_client.patch(
+        f"{URL}/{ajeno.id}",
+        json={"nombre": "Intento de cambio"},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 404

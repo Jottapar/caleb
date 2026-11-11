@@ -79,3 +79,58 @@ it("muestra el error del backend cuando el nombre esta vacio", async () => {
 
   expect(await screen.findByText("El nombre del tercero es obligatorio")).toBeInTheDocument();
 });
+
+const ANA = {
+  id: 1,
+  tipo: "cliente" as const,
+  nombre: "Ana Pérez",
+  documento: "123",
+  email: "ana@example.com",
+  telefono: "3001234567",
+  activo: true,
+};
+
+it("abre el drawer con los datos del tercero al hacer click en Editar", async () => {
+  server.use(http.get(URL, () => HttpResponse.json([ANA])));
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: /editar/i }));
+
+  expect(await screen.findByRole("heading", { name: /editar tercero/i })).toBeInTheDocument();
+  expect(screen.getAllByDisplayValue("Ana Pérez")).toHaveLength(1);
+});
+
+it("guarda la edicion y la fila de la tabla queda actualizada", async () => {
+  let terceros = [ANA];
+  server.use(
+    http.get(URL, () => HttpResponse.json(terceros)),
+    http.patch(`${URL}/:id`, async ({ request }) => {
+      const data = (await request.json()) as Record<string, unknown>;
+      terceros = [{ ...ANA, ...data }];
+      return HttpResponse.json(terceros[0]);
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: /editar/i }));
+  const nombreInput = await screen.findByDisplayValue("Ana Pérez");
+  await user.clear(nombreInput);
+  await user.type(nombreInput, "Ana Actualizada");
+  await user.click(screen.getByRole("button", { name: /guardar/i }));
+
+  expect(await screen.findByText("Ana Actualizada")).toBeInTheDocument();
+});
+
+it("cierra el drawer sin guardar al hacer click en Cerrar", async () => {
+  server.use(http.get(URL, () => HttpResponse.json([ANA])));
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: /editar/i }));
+  await screen.findByRole("heading", { name: /editar tercero/i });
+  await user.click(screen.getByRole("button", { name: /cerrar/i }));
+
+  expect(screen.queryByRole("heading", { name: /editar tercero/i })).not.toBeInTheDocument();
+});

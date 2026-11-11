@@ -4,7 +4,7 @@ from app.core.database import SessionDep
 from app.core.security import auth
 from app.modules.auth.dependencies import CurrentCompanyId
 from app.modules.third_parties import service
-from app.modules.third_parties.schemas import ThirdPartyCreate, ThirdPartyRead
+from app.modules.third_parties.schemas import ThirdPartyCreate, ThirdPartyRead, ThirdPartyUpdate
 
 router = APIRouter(
     prefix="/third-parties",
@@ -21,3 +21,10 @@ def create_third_party(data: ThirdPartyCreate, session: SessionDep, empresa_id: 
 @router.get("", response_model=list[ThirdPartyRead])
 def list_third_parties(session: SessionDep, empresa_id: CurrentCompanyId):
     return service.list_third_parties(session, empresa_id)
+
+
+@router.patch("/{third_party_id}", response_model=ThirdPartyRead)
+def update_third_party(
+    third_party_id: int, data: ThirdPartyUpdate, session: SessionDep, empresa_id: CurrentCompanyId
+):
+    return service.update_third_party(session, third_party_id, data, empresa_id)

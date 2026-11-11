@@ -1,28 +1,32 @@
-import { Button, Field, Input, NativeSelect, Stack, Text } from "@chakra-ui/react";
+import { Button, Field, HStack, Input, NativeSelect, Stack, Text } from "@chakra-ui/react";
 import { useState } from "react";
 
-import type { ThirdPartyCreate, ThirdPartyType } from "../types";
+import type { ThirdParty, ThirdPartyCreate, ThirdPartyType } from "../types";
 
 type Props = {
+  initialValues?: ThirdParty;
   onSubmit: (data: ThirdPartyCreate) => void;
+  onCancel?: () => void;
   isSubmitting: boolean;
   errorMessage: string | null;
 };
 
-export function ThirdPartyForm({ onSubmit, isSubmitting, errorMessage }: Props) {
-  const [tipo, setTipo] = useState<ThirdPartyType>("cliente");
-  const [nombre, setNombre] = useState("");
-  const [documento, setDocumento] = useState("");
-  const [email, setEmail] = useState("");
-  const [telefono, setTelefono] = useState("");
+export function ThirdPartyForm({ initialValues, onSubmit, onCancel, isSubmitting, errorMessage }: Props) {
+  const [tipo, setTipo] = useState<ThirdPartyType>(initialValues?.tipo ?? "cliente");
+  const [nombre, setNombre] = useState(initialValues?.nombre ?? "");
+  const [documento, setDocumento] = useState(initialValues?.documento ?? "");
+  const [email, setEmail] = useState(initialValues?.email ?? "");
+  const [telefono, setTelefono] = useState(initialValues?.telefono ?? "");
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     onSubmit({ tipo, nombre, documento, email, telefono });
-    setNombre("");
-    setDocumento("");
-    setEmail("");
-    setTelefono("");
+    if (!initialValues) {
+      setNombre("");
+      setDocumento("");
+      setEmail("");
+      setTelefono("");
+    }
   }
 
   return (
@@ -63,9 +67,16 @@ export function ThirdPartyForm({ onSubmit, isSubmitting, errorMessage }: Props) 
 
       {errorMessage && <Text color="fg.error">{errorMessage}</Text>}
 
-      <Button type="submit" colorPalette="brand" loading={isSubmitting} alignSelf="start">
-        Guardar
-      </Button>
+      <HStack>
+        <Button type="submit" colorPalette="brand" loading={isSubmitting}>
+          Guardar
+        </Button>
+        {onCancel && (
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cerrar
+          </Button>
+        )}
+      </HStack>
     </Stack>
   );
 }
