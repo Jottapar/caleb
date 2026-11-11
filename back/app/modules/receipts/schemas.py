@@ -12,6 +12,8 @@ class ReceiptItemLineCreate(SQLModel):
 class ReceiptCreate(SQLModel):
     tercero_id: int
     lineas: list[ReceiptItemLineCreate]
+    condicion: str = "contado"
+    fecha_vencimiento: date | None = None
     notas: str = ""
 
 
@@ -37,4 +39,5 @@ class ReceiptRead(SQLModel):
     impuestos_total: Decimal
     total: Decimal
     notas: str
+    saldo: Decimal
     lineas: list[ReceiptItemLineRead]

@@ -46,6 +46,7 @@ const RECIBO = {
   impuestos_total: "0.00",
   total: "10000.00",
   notas: "",
+  saldo: "0.00",
   lineas: [
     {
       id: 1,
@@ -90,6 +91,7 @@ it("crea un recibo eligiendo un cliente y agregando un producto al carrito", asy
         impuestos_total: "0.00",
         total: "10000.00",
         notas: "",
+        saldo: "0.00",
         lineas: [],
         ...data,
       };
@@ -110,6 +112,52 @@ it("crea un recibo eligiendo un cliente y agregando un producto al carrito", asy
 
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(await screen.findByText("R-0001")).toBeInTheDocument();
+});
+
+it("muestra el campo de vencimiento solo cuando elijo crédito en el desplegable", async () => {
+  server.use(
+    http.get(THIRD_PARTIES_URL, () => HttpResponse.json([CLIENTE])),
+    http.get(ITEMS_URL, () => HttpResponse.json([PRODUCTO])),
+    http.get(RECEIPTS_URL, () => HttpResponse.json([])),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Crear Recibo" }));
+  const dialog = await screen.findByRole("dialog");
+
+  expect(within(dialog).queryByLabelText(/vencimiento/i)).not.toBeInTheDocument();
+  await user.selectOptions(within(dialog).getByLabelText(/condición/i), "credito");
+
+  expect(within(dialog).getByLabelText(/vencimiento/i)).toBeInTheDocument();
+});
+
+it("crea un recibo a crédito con su fecha de vencimiento", async () => {
+  let body: Record<string, unknown> = {};
+  server.use(
+    http.get(THIRD_PARTIES_URL, () => HttpResponse.json([CLIENTE])),
+    http.get(ITEMS_URL, () => HttpResponse.json([PRODUCTO])),
+    http.get(RECEIPTS_URL, () => HttpResponse.json([])),
+    http.post(RECEIPTS_URL, async ({ request }) => {
+      body = (await request.json()) as Record<string, unknown>;
+      return HttpResponse.json({ ...RECIBO, condicion: "credito" }, { status: 201 });
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Crear Recibo" }));
+  const dialog = await screen.findByRole("dialog");
+  await user.selectOptions(within(dialog).getByLabelText(/producto/i), "Pan");
+  await user.type(within(dialog).getByLabelText(/cantidad/i), "2");
+  await user.click(within(dialog).getByRole("button", { name: "Agregar" }));
+  await user.selectOptions(within(dialog).getByLabelText(/condición/i), "credito");
+  await user.type(within(dialog).getByLabelText(/vencimiento/i), "2026-12-01");
+  await user.click(within(dialog).getByRole("button", { name: "Crear Recibo" }));
+
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(body.condicion).toBe("credito");
+  expect(body.fecha_vencimiento).toBe("2026-12-01");
 });
 
 it("quita una línea del carrito antes de confirmar", async () => {

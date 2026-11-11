@@ -4,7 +4,7 @@ import { createBrowserRouter, Link as RouterLink } from "react-router-dom";
 import { CompanyName, LoginPage, LogoutButton, RequireAuth } from "../modules/auth";
 import { HomePage } from "../modules/home";
 import { ItemsPage } from "../modules/items";
-import { ReceiptsPage } from "../modules/receipts";
+import { AccountsReceivablePage, ReceiptsPage } from "../modules/receipts";
 import { ThirdPartiesPage } from "../modules/thirdParties";
 import { ErrorPage } from "../shared/components/ErrorPage";
 import { Layout } from "../shared/components/Layout";
@@ -25,6 +25,9 @@ const nav = (
     <Link asChild color="white" fontWeight="medium" px="2" py="1" borderRadius="md" bg="whiteAlpha.100">
       <RouterLink to="/recibos">Recibos</RouterLink>
     </Link>
+    <Link asChild color="white" fontWeight="medium" px="2" py="1" borderRadius="md" bg="whiteAlpha.100">
+      <RouterLink to="/cuentas-por-cobrar">Cuentas por cobrar</RouterLink>
+    </Link>
   </>
 );
 
@@ -43,6 +46,7 @@ export const router = createBrowserRouter([
       { path: "terceros", element: <ThirdPartiesPage /> },
       { path: "productos", element: <ItemsPage /> },
       { path: "recibos", element: <ReceiptsPage /> },
+      { path: "cuentas-por-cobrar", element: <AccountsReceivablePage /> },
     ],
   },
 ]);

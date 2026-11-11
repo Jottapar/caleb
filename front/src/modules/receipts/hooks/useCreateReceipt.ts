@@ -6,17 +6,21 @@ import type { Receipt, ReceiptCartLine } from "../types";
 type CreateReceiptInput = {
   terceroId: number;
   lineas: ReceiptCartLine[];
+  condicion: string;
+  fechaVencimiento?: string;
 };
 
 export function useCreateReceipt() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ terceroId, lineas }: CreateReceiptInput) =>
+    mutationFn: ({ terceroId, lineas, condicion, fechaVencimiento }: CreateReceiptInput) =>
       api
         .post<Receipt>("/receipts", {
           tercero_id: terceroId,
           lineas: lineas.map((linea) => ({ item_id: linea.itemId, cantidad: linea.cantidad })),
+          condicion,
+          fecha_vencimiento: condicion === "credito" ? fechaVencimiento : undefined,
         })
         .then((response) => response.data),
     onSuccess: () => {

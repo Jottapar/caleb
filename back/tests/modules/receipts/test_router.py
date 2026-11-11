@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from sqlmodel import select
@@ -369,5 +370,132 @@ def test_cancel_receipt_from_other_company_returns_404(logged_in_client, session
 
 def test_cancel_receipt_requires_authentication(client):
     response = client.post(f"{URL}/1/cancel")
+
+    assert response.status_code == 401
+
+
+def test_create_credit_receipt_does_not_register_payment(logged_in_client, session):
+    cliente_id = _create_cliente(logged_in_client)
+    item = _create_item(logged_in_client, session, cantidad_inicial="10")
+
+    response = logged_in_client.post(
+        URL,
+        json={
+            "tercero_id": cliente_id,
+            "condicion": "credito",
+            "fecha_vencimiento": "2026-12-01",
+            "lineas": [{"item_id": item["id"], "cantidad": "3"}],
+        },
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 201
+    receipt_id = response.json()["id"]
+    pago = session.exec(
+        select(AccountReceivablePayment).where(AccountReceivablePayment.recibo_id == receipt_id)
+    ).first()
+    assert pago is None
+    existencias = {
+        producto["nombre"]: producto["existencias"]
+        for producto in logged_in_client.get(ITEMS_URL).json()
+    }
+    assert existencias["Pan"] == "7.0000"
+
+
+def test_create_credit_receipt_requires_fecha_vencimiento(logged_in_client, session):
+    cliente_id = _create_cliente(logged_in_client)
+    item = _create_item(logged_in_client, session)
+
+    response = logged_in_client.post(
+        URL,
+        json={
+            "tercero_id": cliente_id,
+            "condicion": "credito",
+            "lineas": [{"item_id": item["id"], "cantidad": "1"}],
+        },
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "business_error"
+
+
+def test_create_contado_receipt_has_zero_balance(logged_in_client, session):
+    cliente_id = _create_cliente(logged_in_client)
+    item = _create_item(logged_in_client, session)
+
+    response = logged_in_client.post(
+        URL,
+        json={"tercero_id": cliente_id, "lineas": [{"item_id": item["id"], "cantidad": "1"}]},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.json()["saldo"] == "0.00"
+
+
+def test_accounts_receivable_lists_only_pending_receipts_with_balance(logged_in_client, session):
+    cliente_id = _create_cliente(logged_in_client)
+    item = _create_item(logged_in_client, session, cantidad_inicial="20")
+    logged_in_client.post(
+        URL,
+        json={"tercero_id": cliente_id, "lineas": [{"item_id": item["id"], "cantidad": "1"}]},
+        headers=_csrf_headers(logged_in_client),
+    )
+    credito = logged_in_client.post(
+        URL,
+        json={
+            "tercero_id": cliente_id,
+            "condicion": "credito",
+            "fecha_vencimiento": "2026-12-01",
+            "lineas": [{"item_id": item["id"], "cantidad": "2"}],
+        },
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+
+    response = logged_in_client.get(f"{URL}/accounts-receivable")
+
+    assert response.status_code == 200
+    cuentas = response.json()
+    assert len(cuentas) == 1
+    assert cuentas[0]["id"] == credito["id"]
+    assert cuentas[0]["saldo"] == credito["total"]
+    assert cuentas[0]["fecha_vencimiento"] == "2026-12-01"
+
+
+def test_accounts_receivable_returns_only_current_company(logged_in_client, session):
+    otra_empresa = Company(nombre="Otra Empresa")
+    session.add(otra_empresa)
+    session.flush()
+    otro_impuesto = Tax(empresa_id=otra_empresa.id, nombre="Sin impuesto", porcentaje=0)
+    session.add(otro_impuesto)
+    session.flush()
+    ajeno_item = items_service.create_item(
+        session,
+        empresa_id=otra_empresa.id,
+        nombre="Item Ajeno",
+        impuesto_id=otro_impuesto.id,
+        precio_venta=Decimal("1000"),
+        cantidad_inicial=Decimal("5"),
+    )
+    ajeno_tercero = third_parties_service.create_third_party(
+        session, empresa_id=otra_empresa.id, tipo="cliente", nombre="Cliente Ajeno"
+    )
+    receipts_service.create_receipt(
+        session,
+        empresa_id=otra_empresa.id,
+        tercero_id=ajeno_tercero.id,
+        condicion="credito",
+        fecha_vencimiento=date(2026, 12, 1),
+        lineas=[ReceiptItemLineCreate(item_id=ajeno_item.id, cantidad=Decimal("1"))],
+    )
+
+    response = logged_in_client.get(f"{URL}/accounts-receivable")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_accounts_receivable_requires_authentication(client):
+    response = client.get(f"{URL}/accounts-receivable")
 
     assert response.status_code == 401

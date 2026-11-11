@@ -16,13 +16,24 @@ router = APIRouter(
 @router.post("", response_model=ReceiptRead, status_code=status.HTTP_201_CREATED)
 def create_receipt(data: ReceiptCreate, session: SessionDep, empresa_id: CurrentCompanyId):
     return service.create_receipt(
-        session, empresa_id=empresa_id, tercero_id=data.tercero_id, lineas=data.lineas, notas=data.notas
+        session,
+        empresa_id=empresa_id,
+        tercero_id=data.tercero_id,
+        lineas=data.lineas,
+        condicion=data.condicion,
+        fecha_vencimiento=data.fecha_vencimiento,
+        notas=data.notas,
     )
 
 
 @router.get("", response_model=list[ReceiptRead])
 def list_receipts(session: SessionDep, empresa_id: CurrentCompanyId):
     return service.list_receipts(session, empresa_id)
+
+
+@router.get("/accounts-receivable", response_model=list[ReceiptRead])
+def list_accounts_receivable(session: SessionDep, empresa_id: CurrentCompanyId):
+    return service.list_accounts_receivable(session, empresa_id)
 
 
 @router.get("/{receipt_id}", response_model=ReceiptRead)

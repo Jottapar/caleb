@@ -21,6 +21,7 @@ export type Receipt = {
   impuestos_total: string;
   total: string;
   notas: string;
+  saldo: string;
   lineas: ReceiptItemLine[];
 };
 

@@ -31,6 +31,8 @@ export function ReceiptsPage() {
   const cancelReceipt = useCancelReceipt();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [terceroId, setTerceroId] = useState("");
+  const [condicion, setCondicion] = useState("contado");
+  const [fechaVencimiento, setFechaVencimiento] = useState("");
   const [cartLines, setCartLines] = useState<ReceiptCartLine[]>([]);
   const [viewingReceipt, setViewingReceipt] = useState<Receipt | null>(null);
   const [cancelingReceipt, setCancelingReceipt] = useState<Receipt | null>(null);
@@ -41,8 +43,14 @@ export function ReceiptsPage() {
   );
   const vendibles = (items.data ?? []).filter((item) => item.se_vende);
 
+  function getClienteNombre(terceroId: number) {
+    return thirdParties.data?.find((tercero) => tercero.id === terceroId)?.nombre ?? "";
+  }
+
   function handleOpenCreateDialog() {
     setTerceroId(clientes[0]?.id.toString() ?? "");
+    setCondicion("contado");
+    setFechaVencimiento("");
     setIsCreateDialogOpen(true);
   }
 
@@ -76,7 +84,7 @@ export function ReceiptsPage() {
 
   function handleConfirmCreate() {
     createReceipt.mutate(
-      { terceroId: Number(terceroId), lineas: cartLines },
+      { terceroId: Number(terceroId), lineas: cartLines, condicion, fechaVencimiento },
       {
         onSuccess: () => {
           setCartLines([]);
@@ -109,7 +117,11 @@ export function ReceiptsPage() {
       )}
 
       {receipts.data && receipts.data.length > 0 && (
-        <ReceiptTable receipts={receipts.data} onView={setViewingReceipt} />
+        <ReceiptTable
+          receipts={receipts.data}
+          getClienteNombre={getClienteNombre}
+          onView={setViewingReceipt}
+        />
       )}
 
       {isCreateDialogOpen && (
@@ -118,6 +130,10 @@ export function ReceiptsPage() {
           items={vendibles}
           terceroId={terceroId}
           onTerceroChange={setTerceroId}
+          condicion={condicion}
+          onCondicionChange={setCondicion}
+          fechaVencimiento={fechaVencimiento}
+          onFechaVencimientoChange={setFechaVencimiento}
           lineas={cartLines}
           onAddLine={handleAddCartLine}
           onRemoveLine={handleRemoveCartLine}
@@ -131,10 +147,7 @@ export function ReceiptsPage() {
       {viewingReceipt && (
         <ReceiptDetailDialog
           receipt={viewingReceipt}
-          clienteNombre={
-            thirdParties.data?.find((tercero) => tercero.id === viewingReceipt.tercero_id)
-              ?.nombre ?? ""
-          }
+          clienteNombre={getClienteNombre(viewingReceipt.tercero_id)}
           onClose={() => setViewingReceipt(null)}
           onCancelRequest={handleCancelRequest}
         />

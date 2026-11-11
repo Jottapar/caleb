@@ -10,6 +10,10 @@ type Props = {
   items: Item[];
   terceroId: string;
   onTerceroChange: (terceroId: string) => void;
+  condicion: string;
+  onCondicionChange: (condicion: string) => void;
+  fechaVencimiento: string;
+  onFechaVencimientoChange: (fecha: string) => void;
   lineas: ReceiptCartLine[];
   onAddLine: (linea: ReceiptCartLine) => void;
   onRemoveLine: (itemId: number) => void;
@@ -24,6 +28,10 @@ export function CreateReceiptDialog({
   items,
   terceroId,
   onTerceroChange,
+  condicion,
+  onCondicionChange,
+  fechaVencimiento,
+  onFechaVencimientoChange,
   lineas,
   onAddLine,
   onRemoveLine,
@@ -91,6 +99,30 @@ export function CreateReceiptDialog({
                 <Input value={cantidad} onChange={(event) => setCantidad(event.target.value)} />
               </Field.Root>
 
+              <Field.Root required>
+                <Field.Label>Condición</Field.Label>
+                <NativeSelect.Root>
+                  <NativeSelect.Field
+                    value={condicion}
+                    onChange={(event) => onCondicionChange(event.target.value)}
+                  >
+                    <option value="contado">Contado</option>
+                    <option value="credito">Crédito</option>
+                  </NativeSelect.Field>
+                </NativeSelect.Root>
+              </Field.Root>
+
+              {condicion === "credito" && (
+                <Field.Root required>
+                  <Field.Label>Fecha de vencimiento</Field.Label>
+                  <Input
+                    type="date"
+                    value={fechaVencimiento}
+                    onChange={(event) => onFechaVencimientoChange(event.target.value)}
+                  />
+                </Field.Root>
+              )}
+
               <HStack>
                 <Button onClick={handleAddLine}>Agregar</Button>
               </HStack>
@@ -135,7 +167,11 @@ export function CreateReceiptDialog({
               <Button
                 colorPalette="brand"
                 loading={isSubmitting}
-                disabled={lineas.length === 0 || !terceroId}
+                disabled={
+                  lineas.length === 0 ||
+                  !terceroId ||
+                  (condicion === "credito" && !fechaVencimiento)
+                }
                 onClick={onConfirm}
               >
                 Crear Recibo

@@ -6,7 +6,7 @@ type Props = {
   receipt: Receipt;
   clienteNombre: string;
   onClose: () => void;
-  onCancelRequest: () => void;
+  onCancelRequest?: () => void;
 };
 
 export function ReceiptDetailDialog({ receipt, clienteNombre, onClose, onCancelRequest }: Props) {
@@ -59,7 +59,7 @@ export function ReceiptDetailDialog({ receipt, clienteNombre, onClose, onCancelR
               <Button variant="outline" onClick={onClose}>
                 Cerrar
               </Button>
-              {receipt.estado === "emitido" && (
+              {onCancelRequest && receipt.estado === "emitido" && receipt.condicion === "contado" && (
                 <Button colorPalette="red" variant="outline" onClick={onCancelRequest}>
                   Cancelar recibo
                 </Button>

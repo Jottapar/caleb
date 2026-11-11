@@ -12,6 +12,7 @@ from app.modules.taxes.models import Tax
 from app.modules.third_parties.models import ThirdParty
 
 TERCEROS_VALIDOS_EN_RECIBO = {"cliente", "ambos"}
+CONDICIONES_VALIDAS = {"contado", "credito"}
 
 
 def _round(monto: Decimal) -> Decimal:
@@ -33,6 +34,13 @@ def _generate_numero(session: Session, empresa_id: int) -> str:
     return f"R-{len(total) + 1:04d}"
 
 
+def _validate_condicion(condicion: str, fecha_vencimiento: date | None) -> None:
+    if condicion not in CONDICIONES_VALIDAS:
+        raise BusinessError(f"Condicion invalida: {condicion}")
+    if condicion == "credito" and fecha_vencimiento is None:
+        raise BusinessError("La fecha de vencimiento es obligatoria en un recibo a credito")
+
+
 def _get_item_for_line(session: Session, item_id: int, empresa_id: int, cantidad: Decimal) -> Item:
     item = session.exec(
         select(Item).where(Item.id == item_id, Item.empresa_id == empresa_id)
@@ -51,11 +59,14 @@ def create_receipt(
     empresa_id: int,
     tercero_id: int,
     lineas: list[ReceiptItemLineCreate],
+    condicion: str = "contado",
+    fecha_vencimiento: date | None = None,
     notas: str = "",
 ) -> ReceiptRead:
     if not lineas:
         raise BusinessError("El recibo debe tener al menos una linea")
 
+    _validate_condicion(condicion, fecha_vencimiento)
     _validate_third_party(session, tercero_id, empresa_id)
     numero = _generate_numero(session, empresa_id)
 
@@ -73,8 +84,8 @@ def create_receipt(
         tercero_id=tercero_id,
         numero=numero,
         fecha=fecha,
-        condicion="contado",
-        fecha_vencimiento=fecha,
+        condicion=condicion,
+        fecha_vencimiento=fecha_vencimiento if condicion == "credito" else fecha,
         estado="emitido",
         notas=notas,
     )
@@ -116,30 +127,51 @@ def create_receipt(
     receipt.total = subtotal + impuestos_total
     session.add(receipt)
 
-    session.add(
-        AccountReceivablePayment(
-            empresa_id=empresa_id,
-            recibo_id=receipt.id,
-            monto=receipt.total,
-            fecha=fecha,
-            nota="Pago de contado",
+    if condicion == "contado":
+        session.add(
+            AccountReceivablePayment(
+                empresa_id=empresa_id,
+                recibo_id=receipt.id,
+                monto=receipt.total,
+                fecha=fecha,
+                nota="Pago de contado",
+            )
         )
-    )
 
     session.commit()
     return get_by_id(session, receipt.id, empresa_id)
+
+
+def get_balance(session: Session, receipt: Receipt) -> Decimal:
+    pagos_activos = session.exec(
+        select(AccountReceivablePayment).where(
+            AccountReceivablePayment.recibo_id == receipt.id,
+            AccountReceivablePayment.estado == "activo",
+        )
+    ).all()
+    return receipt.total - sum((pago.monto for pago in pagos_activos), Decimal(0))
 
 
 def _with_lines(session: Session, receipt: Receipt) -> ReceiptRead:
     lineas = session.exec(
         select(ReceiptItemLine).where(ReceiptItemLine.recibo_id == receipt.id)
     ).all()
-    return ReceiptRead(**receipt.model_dump(), lineas=list(lineas))
+    return ReceiptRead(
+        **receipt.model_dump(), saldo=get_balance(session, receipt), lineas=list(lineas)
+    )
 
 
 def list_receipts(session: Session, empresa_id: int) -> list[ReceiptRead]:
     receipts = session.exec(select(Receipt).where(Receipt.empresa_id == empresa_id)).all()
     return [_with_lines(session, receipt) for receipt in receipts]
+
+
+def list_accounts_receivable(session: Session, empresa_id: int) -> list[ReceiptRead]:
+    receipts = session.exec(
+        select(Receipt).where(Receipt.empresa_id == empresa_id, Receipt.estado == "emitido")
+    ).all()
+    pendientes = [receipt for receipt in receipts if get_balance(session, receipt) > 0]
+    return [_with_lines(session, receipt) for receipt in pendientes]
 
 
 def _get_receipt(session: Session, receipt_id: int, empresa_id: int) -> Receipt:
