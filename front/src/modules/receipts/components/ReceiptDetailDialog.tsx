@@ -6,9 +6,10 @@ type Props = {
   receipt: Receipt;
   clienteNombre: string;
   onClose: () => void;
+  onCancelRequest: () => void;
 };
 
-export function ReceiptDetailDialog({ receipt, clienteNombre, onClose }: Props) {
+export function ReceiptDetailDialog({ receipt, clienteNombre, onClose, onCancelRequest }: Props) {
   return (
     <Dialog.Root open onOpenChange={(details) => !details.open && onClose()}>
       <Dialog.Backdrop />
@@ -22,6 +23,7 @@ export function ReceiptDetailDialog({ receipt, clienteNombre, onClose }: Props) 
               <Stack gap="1">
                 <Text>Cliente: {clienteNombre}</Text>
                 <Text>Fecha: {receipt.fecha}</Text>
+                <Text>Estado: {receipt.estado}</Text>
               </Stack>
 
               <Table.Root>
@@ -57,6 +59,11 @@ export function ReceiptDetailDialog({ receipt, clienteNombre, onClose }: Props) 
               <Button variant="outline" onClick={onClose}>
                 Cerrar
               </Button>
+              {receipt.estado === "emitido" && (
+                <Button colorPalette="red" variant="outline" onClick={onCancelRequest}>
+                  Cancelar recibo
+                </Button>
+              )}
             </HStack>
           </Dialog.Footer>
         </Dialog.Content>

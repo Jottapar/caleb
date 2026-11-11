@@ -15,6 +15,7 @@ export function ReceiptTable({ receipts, onView }: Props) {
           <Table.ColumnHeader>Número</Table.ColumnHeader>
           <Table.ColumnHeader>Fecha</Table.ColumnHeader>
           <Table.ColumnHeader>Total</Table.ColumnHeader>
+          <Table.ColumnHeader>Estado</Table.ColumnHeader>
           <Table.ColumnHeader></Table.ColumnHeader>
         </Table.Row>
       </Table.Header>
@@ -24,6 +25,7 @@ export function ReceiptTable({ receipts, onView }: Props) {
             <Table.Cell>{receipt.numero}</Table.Cell>
             <Table.Cell>{receipt.fecha}</Table.Cell>
             <Table.Cell>{receipt.total}</Table.Cell>
+            <Table.Cell>{receipt.estado}</Table.Cell>
             <Table.Cell>
               <Button size="sm" variant="ghost" onClick={() => onView(receipt)}>
                 Ver

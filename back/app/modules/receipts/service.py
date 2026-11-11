@@ -142,10 +142,48 @@ def list_receipts(session: Session, empresa_id: int) -> list[ReceiptRead]:
     return [_with_lines(session, receipt) for receipt in receipts]
 
 
-def get_by_id(session: Session, receipt_id: int, empresa_id: int) -> ReceiptRead:
+def _get_receipt(session: Session, receipt_id: int, empresa_id: int) -> Receipt:
     receipt = session.exec(
         select(Receipt).where(Receipt.id == receipt_id, Receipt.empresa_id == empresa_id)
     ).first()
     if not receipt:
         raise NotFoundError("Recibo", receipt_id)
+    return receipt
+
+
+def get_by_id(session: Session, receipt_id: int, empresa_id: int) -> ReceiptRead:
+    receipt = _get_receipt(session, receipt_id, empresa_id)
+    return _with_lines(session, receipt)
+
+
+def cancel_receipt(session: Session, receipt_id: int, empresa_id: int) -> ReceiptRead:
+    receipt = _get_receipt(session, receipt_id, empresa_id)
+    if receipt.estado != "emitido":
+        raise BusinessError("Solo se puede cancelar un recibo emitido")
+
+    lineas = session.exec(
+        select(ReceiptItemLine).where(ReceiptItemLine.recibo_id == receipt.id)
+    ).all()
+    for linea in lineas:
+        session.add(
+            InventoryMovement(
+                empresa_id=empresa_id,
+                item_id=linea.item_id,
+                tipo="entrada",
+                cantidad=linea.cantidad,
+                origen="recibo",
+                origen_id=receipt.id,
+            )
+        )
+
+    pago = session.exec(
+        select(AccountReceivablePayment).where(AccountReceivablePayment.recibo_id == receipt.id)
+    ).first()
+    if pago:
+        pago.estado = "anulado"
+        session.add(pago)
+
+    receipt.estado = "anulado"
+    session.add(receipt)
+    session.commit()
     return _with_lines(session, receipt)

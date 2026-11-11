@@ -54,5 +54,7 @@ class AccountReceivablePayment(SQLModel, table=True):
     recibo_id: int = Field(foreign_key="recibos.id")
     monto: Decimal = Field(sa_type=Numeric(14, 2))
     fecha: date
+    # Valores validos (los valida el backend): activo, anulado
+    estado: str = Field(max_length=20, default="activo")
     nota: str = Field(max_length=255, default="")
     created_at: datetime = Field(default_factory=utc_now, sa_type=DateTime(timezone=True))

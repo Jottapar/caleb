@@ -289,3 +289,85 @@ def test_create_receipt_requires_authentication(client):
     )
 
     assert response.status_code == 401
+
+
+def test_cancel_receipt_reverts_stock_and_cancels_payment(logged_in_client, session):
+    cliente_id = _create_cliente(logged_in_client)
+    item = _create_item(logged_in_client, session, cantidad_inicial="10")
+    created = logged_in_client.post(
+        URL,
+        json={"tercero_id": cliente_id, "lineas": [{"item_id": item["id"], "cantidad": "3"}]},
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+
+    response = logged_in_client.post(
+        f"{URL}/{created['id']}/cancel", headers=_csrf_headers(logged_in_client)
+    )
+
+    assert response.status_code == 200
+    assert response.json()["estado"] == "anulado"
+    existencias = {
+        producto["nombre"]: producto["existencias"]
+        for producto in logged_in_client.get(ITEMS_URL).json()
+    }
+    assert existencias["Pan"] == "10.0000"
+    pago = session.exec(
+        select(AccountReceivablePayment).where(AccountReceivablePayment.recibo_id == created["id"])
+    ).one()
+    assert pago.estado == "anulado"
+
+
+def test_cancel_receipt_already_cancelled_rejects(logged_in_client, session):
+    cliente_id = _create_cliente(logged_in_client)
+    item = _create_item(logged_in_client, session)
+    created = logged_in_client.post(
+        URL,
+        json={"tercero_id": cliente_id, "lineas": [{"item_id": item["id"], "cantidad": "1"}]},
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+    logged_in_client.post(f"{URL}/{created['id']}/cancel", headers=_csrf_headers(logged_in_client))
+
+    response = logged_in_client.post(
+        f"{URL}/{created['id']}/cancel", headers=_csrf_headers(logged_in_client)
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "business_error"
+
+
+def test_cancel_receipt_from_other_company_returns_404(logged_in_client, session):
+    otra_empresa = Company(nombre="Otra Empresa")
+    session.add(otra_empresa)
+    session.flush()
+    otro_impuesto = Tax(empresa_id=otra_empresa.id, nombre="Sin impuesto", porcentaje=0)
+    session.add(otro_impuesto)
+    session.flush()
+    ajeno_item = items_service.create_item(
+        session,
+        empresa_id=otra_empresa.id,
+        nombre="Item Ajeno",
+        impuesto_id=otro_impuesto.id,
+        precio_venta=Decimal("1000"),
+        cantidad_inicial=Decimal("5"),
+    )
+    ajeno_tercero = third_parties_service.create_third_party(
+        session, empresa_id=otra_empresa.id, tipo="cliente", nombre="Cliente Ajeno"
+    )
+    ajeno_recibo = receipts_service.create_receipt(
+        session,
+        empresa_id=otra_empresa.id,
+        tercero_id=ajeno_tercero.id,
+        lineas=[ReceiptItemLineCreate(item_id=ajeno_item.id, cantidad=Decimal("1"))],
+    )
+
+    response = logged_in_client.post(
+        f"{URL}/{ajeno_recibo.id}/cancel", headers=_csrf_headers(logged_in_client)
+    )
+
+    assert response.status_code == 404
+
+
+def test_cancel_receipt_requires_authentication(client):
+    response = client.post(f"{URL}/1/cancel")
+
+    assert response.status_code == 401

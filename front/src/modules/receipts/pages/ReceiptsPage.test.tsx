@@ -192,6 +192,65 @@ it("muestra el detalle completo de un recibo al hacer clic en Ver", async () => 
   expect(within(dialog).getByText("10000.00")).toBeInTheDocument();
 });
 
+it("muestra el estado del recibo en el listado y en el detalle", async () => {
+  server.use(
+    http.get(THIRD_PARTIES_URL, () => HttpResponse.json([CLIENTE])),
+    http.get(ITEMS_URL, () => HttpResponse.json([PRODUCTO])),
+    http.get(RECEIPTS_URL, () => HttpResponse.json([RECIBO])),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  expect(await screen.findByText("emitido")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Ver" }));
+  const dialog = await screen.findByRole("dialog");
+
+  expect(within(dialog).getByText(/emitido/)).toBeInTheDocument();
+});
+
+it("cancela un recibo desde el detalle tras confirmar", async () => {
+  let recibo = { ...RECIBO };
+  server.use(
+    http.get(THIRD_PARTIES_URL, () => HttpResponse.json([CLIENTE])),
+    http.get(ITEMS_URL, () => HttpResponse.json([PRODUCTO])),
+    http.get(RECEIPTS_URL, () => HttpResponse.json([recibo])),
+    http.post(`${RECEIPTS_URL}/:id/cancel`, () => {
+      recibo = { ...recibo, estado: "anulado" };
+      return HttpResponse.json(recibo);
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Ver" }));
+  const dialog = await screen.findByRole("dialog");
+  await user.click(within(dialog).getByRole("button", { name: "Cancelar recibo" }));
+  const confirmDialog = await screen.findByRole("alertdialog");
+  await user.click(within(confirmDialog).getByRole("button", { name: "Cancelar recibo" }));
+
+  expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  expect(await screen.findByText("anulado")).toBeInTheDocument();
+});
+
+it("no cancela el recibo si cierro el diálogo de confirmación sin confirmar", async () => {
+  server.use(
+    http.get(THIRD_PARTIES_URL, () => HttpResponse.json([CLIENTE])),
+    http.get(ITEMS_URL, () => HttpResponse.json([PRODUCTO])),
+    http.get(RECEIPTS_URL, () => HttpResponse.json([RECIBO])),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Ver" }));
+  const dialog = await screen.findByRole("dialog");
+  await user.click(within(dialog).getByRole("button", { name: "Cancelar recibo" }));
+  const confirmDialog = await screen.findByRole("alertdialog");
+  await user.click(within(confirmDialog).getByRole("button", { name: "Cancelar" }));
+
+  expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  expect(screen.getByText("emitido")).toBeInTheDocument();
+});
+
 it("cierra el detalle del recibo y vuelve al listado", async () => {
   server.use(
     http.get(THIRD_PARTIES_URL, () => HttpResponse.json([CLIENTE])),

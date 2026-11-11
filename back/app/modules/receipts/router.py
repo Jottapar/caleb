@@ -28,3 +28,8 @@ def list_receipts(session: SessionDep, empresa_id: CurrentCompanyId):
 @router.get("/{receipt_id}", response_model=ReceiptRead)
 def get_receipt(receipt_id: int, session: SessionDep, empresa_id: CurrentCompanyId):
     return service.get_by_id(session, receipt_id, empresa_id)
+
+
+@router.post("/{receipt_id}/cancel", response_model=ReceiptRead)
+def cancel_receipt(receipt_id: int, session: SessionDep, empresa_id: CurrentCompanyId):
+    return service.cancel_receipt(session, receipt_id, empresa_id)

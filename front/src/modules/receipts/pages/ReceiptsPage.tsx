@@ -1,4 +1,4 @@
-import { Button, Center, Heading, Spinner, Stack, Text } from "@chakra-ui/react";
+import { Button, Center, Dialog, Heading, HStack, Spinner, Stack, Text } from "@chakra-ui/react";
 import { isAxiosError } from "axios";
 import { useState } from "react";
 
@@ -7,6 +7,7 @@ import { useThirdParties } from "../../thirdParties/hooks/useThirdParties";
 import { CreateReceiptDialog } from "../components/CreateReceiptDialog";
 import { ReceiptDetailDialog } from "../components/ReceiptDetailDialog";
 import { ReceiptTable } from "../components/ReceiptTable";
+import { useCancelReceipt } from "../hooks/useCancelReceipt";
 import { useCreateReceipt } from "../hooks/useCreateReceipt";
 import { useReceipts } from "../hooks/useReceipts";
 import type { Receipt, ReceiptCartLine } from "../types";
@@ -27,10 +28,12 @@ export function ReceiptsPage() {
   const thirdParties = useThirdParties();
   const items = useItems();
   const createReceipt = useCreateReceipt();
+  const cancelReceipt = useCancelReceipt();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [terceroId, setTerceroId] = useState("");
   const [cartLines, setCartLines] = useState<ReceiptCartLine[]>([]);
   const [viewingReceipt, setViewingReceipt] = useState<Receipt | null>(null);
+  const [cancelingReceipt, setCancelingReceipt] = useState<Receipt | null>(null);
 
   // Solo clientes (o "ambos") pueden ir en un recibo, y solo productos marcados para venderse
   const clientes = (thirdParties.data ?? []).filter(
@@ -55,6 +58,20 @@ export function ReceiptsPage() {
 
   function handleRemoveCartLine(itemId: number) {
     setCartLines((lineas) => lineas.filter((linea) => linea.itemId !== itemId));
+  }
+
+  function handleCancelRequest() {
+    setCancelingReceipt(viewingReceipt);
+    setViewingReceipt(null);
+  }
+
+  function handleConfirmCancel() {
+    if (!cancelingReceipt) {
+      return;
+    }
+    cancelReceipt.mutate(cancelingReceipt.id, {
+      onSuccess: () => setCancelingReceipt(null),
+    });
   }
 
   function handleConfirmCreate() {
@@ -119,7 +136,51 @@ export function ReceiptsPage() {
               ?.nombre ?? ""
           }
           onClose={() => setViewingReceipt(null)}
+          onCancelRequest={handleCancelRequest}
         />
+      )}
+
+      {cancelingReceipt && (
+        <Dialog.Root
+          role="alertdialog"
+          open
+          onOpenChange={(details) => !details.open && setCancelingReceipt(null)}
+        >
+          <Dialog.Backdrop />
+          <Dialog.Positioner>
+            <Dialog.Content>
+              <Dialog.Header>
+                <Dialog.Title>Cancelar recibo {cancelingReceipt.numero}</Dialog.Title>
+              </Dialog.Header>
+              <Dialog.Body>
+                <Text>
+                  ¿Seguro que quieres cancelar el recibo {cancelingReceipt.numero}? El inventario
+                  que descontó vuelve a su cantidad anterior y el pago registrado queda anulado.
+                  Esta acción no se puede deshacer.
+                </Text>
+                {getErrorMessage(cancelReceipt.isError, cancelReceipt.error) && (
+                  <Text color="fg.error" mt="2">
+                    {getErrorMessage(cancelReceipt.isError, cancelReceipt.error)}
+                  </Text>
+                )}
+              </Dialog.Body>
+              <Dialog.Footer>
+                <HStack>
+                  <Button variant="outline" onClick={() => setCancelingReceipt(null)}>
+                    Cancelar
+                  </Button>
+                  <Button
+                    colorPalette="red"
+                    loading={cancelReceipt.isPending}
+                    onClick={handleConfirmCancel}
+                  >
+                    Cancelar recibo
+                  </Button>
+                </HStack>
+              </Dialog.Footer>
+            </Dialog.Content>
+          </Dialog.Positioner>
+        </Dialog.Root>
       )}
     </Stack>
   );
