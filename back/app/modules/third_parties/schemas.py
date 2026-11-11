@@ -15,6 +15,7 @@ class ThirdPartyUpdate(SQLModel):
     documento: str | None = None
     email: str | None = None
     telefono: str | None = None
+    activo: bool | None = None
 
 
 class ThirdPartyRead(SQLModel):

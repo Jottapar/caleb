@@ -1,13 +1,14 @@
-import { Button, Table } from "@chakra-ui/react";
+import { Button, Switch, Table } from "@chakra-ui/react";
 
 import type { ThirdParty } from "../types";
 
 type Props = {
   thirdParties: ThirdParty[];
   onEdit: (thirdParty: ThirdParty) => void;
+  onToggleActive: (thirdParty: ThirdParty, activo: boolean) => void;
 };
 
-export function ThirdPartyTable({ thirdParties, onEdit }: Props) {
+export function ThirdPartyTable({ thirdParties, onEdit, onToggleActive }: Props) {
   return (
     <Table.Root>
       <Table.Header>
@@ -29,7 +30,17 @@ export function ThirdPartyTable({ thirdParties, onEdit }: Props) {
             <Table.Cell>{thirdParty.documento}</Table.Cell>
             <Table.Cell>{thirdParty.email}</Table.Cell>
             <Table.Cell>{thirdParty.telefono}</Table.Cell>
-            <Table.Cell>{thirdParty.activo ? "Sí" : "No"}</Table.Cell>
+            <Table.Cell>
+              <Switch.Root
+                checked={thirdParty.activo}
+                onCheckedChange={(details) => onToggleActive(thirdParty, details.checked)}
+              >
+                <Switch.HiddenInput />
+                <Switch.Control>
+                  <Switch.Thumb />
+                </Switch.Control>
+              </Switch.Root>
+            </Table.Cell>
             <Table.Cell>
               <Button size="sm" variant="ghost" onClick={() => onEdit(thirdParty)}>
                 Editar

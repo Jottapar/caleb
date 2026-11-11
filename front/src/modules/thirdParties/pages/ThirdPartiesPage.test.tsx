@@ -123,6 +123,46 @@ it("guarda la edicion y la fila de la tabla queda actualizada", async () => {
   expect(await screen.findByText("Ana Actualizada")).toBeInTheDocument();
 });
 
+it("desactiva un tercero con el switch y se ve apagado en la lista", async () => {
+  let tercero = { ...ANA };
+  server.use(
+    http.get(URL, () => HttpResponse.json([tercero])),
+    http.patch(`${URL}/:id`, async ({ request }) => {
+      const data = (await request.json()) as Record<string, unknown>;
+      tercero = { ...tercero, ...data };
+      return HttpResponse.json(tercero);
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  const switchInput = await screen.findByRole("checkbox");
+  expect(switchInput).toBeChecked();
+  await user.click(switchInput);
+
+  expect(await screen.findByRole("checkbox")).not.toBeChecked();
+});
+
+it("reactiva un tercero con el switch y se ve prendido en la lista", async () => {
+  let tercero = { ...ANA, activo: false };
+  server.use(
+    http.get(URL, () => HttpResponse.json([tercero])),
+    http.patch(`${URL}/:id`, async ({ request }) => {
+      const data = (await request.json()) as Record<string, unknown>;
+      tercero = { ...tercero, ...data };
+      return HttpResponse.json(tercero);
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  const switchInput = await screen.findByRole("checkbox");
+  expect(switchInput).not.toBeChecked();
+  await user.click(switchInput);
+
+  expect(await screen.findByRole("checkbox")).toBeChecked();
+});
+
 it("cierra el drawer sin guardar al hacer click en Cerrar", async () => {
   server.use(http.get(URL, () => HttpResponse.json([ANA])));
   const user = userEvent.setup();

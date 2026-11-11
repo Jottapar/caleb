@@ -30,6 +30,10 @@ export function ThirdPartiesPage() {
     createThirdParty.mutate(data);
   }
 
+  function handleToggleActive(thirdParty: ThirdParty, activo: boolean) {
+    updateThirdParty.mutate({ id: thirdParty.id, data: { activo } });
+  }
+
   function handleUpdate(data: ThirdPartyCreate) {
     if (!editingThirdParty) {
       return;
@@ -65,7 +69,11 @@ export function ThirdPartiesPage() {
       )}
 
       {thirdParties.data && thirdParties.data.length > 0 && (
-        <ThirdPartyTable thirdParties={thirdParties.data} onEdit={setEditingThirdParty} />
+        <ThirdPartyTable
+          thirdParties={thirdParties.data}
+          onEdit={setEditingThirdParty}
+          onToggleActive={handleToggleActive}
+        />
       )}
 
       {editingThirdParty && (

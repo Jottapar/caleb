@@ -180,3 +180,42 @@ def test_update_third_party_from_other_company_returns_404(logged_in_client, ses
     )
 
     assert response.status_code == 404
+
+
+def test_update_third_party_can_deactivate(logged_in_client):
+    created = logged_in_client.post(
+        URL,
+        json={"tipo": "cliente", "nombre": "Carlos"},
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+
+    response = logged_in_client.patch(
+        f"{URL}/{created['id']}",
+        json={"activo": False},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["activo"] is False
+
+
+def test_update_third_party_can_reactivate(logged_in_client):
+    created = logged_in_client.post(
+        URL,
+        json={"tipo": "cliente", "nombre": "Carlos"},
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+    logged_in_client.patch(
+        f"{URL}/{created['id']}",
+        json={"activo": False},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    response = logged_in_client.patch(
+        f"{URL}/{created['id']}",
+        json={"activo": True},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["activo"] is True

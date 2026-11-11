@@ -5,7 +5,7 @@ import type { ThirdParty, ThirdPartyCreate } from "../types";
 
 type UpdateVariables = {
   id: number;
-  data: Partial<ThirdPartyCreate>;
+  data: Partial<ThirdPartyCreate> & { activo?: boolean };
 };
 
 export function useUpdateThirdParty() {
