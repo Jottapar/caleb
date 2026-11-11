@@ -12,7 +12,9 @@ pydantic-settings
 loguru
 
 # Autenticacion
+authx
 pwdlib[argon2]
 
 # Tests
 pytest
+httpx2

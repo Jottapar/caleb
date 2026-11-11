@@ -21,3 +21,11 @@ def create_company_with_owner(
 
     session.add(UserCompany(usuario_id=user.id, empresa_id=company.id, rol="propietario"))
     session.commit()
+
+
+def get_active_user(session: Session, user_id: int) -> User | None:
+    """Unico lugar que define que es un "usuario activo": lo usan el login,
+    el subject getter de AuthX y el refresh, para no repetir el chequeo.
+    """
+    user = session.get(User, user_id)
+    return user if user and user.activo else None

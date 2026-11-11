@@ -1,10 +1,11 @@
+from authx.exceptions import AuthXException
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import router as v1_router
 from app.core.config import settings
 from app.core.errors import AppError
-from app.core.handlers import app_error_handler, unexpected_error_handler
+from app.core.handlers import app_error_handler, authx_error_handler, unexpected_error_handler
 from app.core.logger import logger
 
 app = FastAPI(title="Caleb API", version="0.1.0")
@@ -18,8 +19,9 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],)
-# Solo dos handlers: los errores de dominio y todo lo demas.
+# Tres handlers: los errores de dominio, los de AuthX, y todo lo demas.
 app.add_exception_handler(AppError, app_error_handler)
+app.add_exception_handler(AuthXException, authx_error_handler)
 app.add_exception_handler(Exception, unexpected_error_handler)
 
 app.include_router(v1_router)

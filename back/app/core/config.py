@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # corremos tests contra caleb_dev: cada test abre y revierte una transaccion,
     # pero si alguien apunta mal la URL no queremos arriesgar datos de desarrollo.
     TEST_DATABASE_URL: str = ""
+    # Firma los JWT de las cookies de sesion. Distinta por entorno: nunca la
+    # de desarrollo en produccion. Sin default: si falta, la app no arranca.
+    JWT_SECRET_KEY: str
 
     @property
     def alembic_url(self) -> str:

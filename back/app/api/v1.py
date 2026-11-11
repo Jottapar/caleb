@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.modules.auth.router import router as auth_router
 from app.modules.health.router import router as health_router
 
 # Unico lugar donde se arma la version 1 de la API. Cada modulo nuevo
@@ -7,3 +8,4 @@ from app.modules.health.router import router as health_router
 router = APIRouter(prefix="/api/v1")
 
 router.include_router(health_router)
+router.include_router(auth_router)
