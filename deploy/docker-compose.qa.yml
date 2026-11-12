@@ -4,6 +4,13 @@
 # Los puertos solo se publican en localhost (127.0.0.1): nadie en internet
 # puede pegarle directo a estos contenedores, solo el Nginx del servidor,
 # que es el unico que escucha en 80/443.
+#
+# "name" fija el proyecto de Compose. Sin esto, Compose nombra el proyecto
+# segun la carpeta actual (aqui, "deploy") y, como el de produccion corre
+# desde la misma carpeta con los mismos nombres de servicio ("back", "front"),
+# los dos terminan compartiendo un solo proyecto: el segundo "up" recrea los
+# contenedores del primero en vez de crear los suyos propios.
+name: caleb-qa
 services:
   back:
     build:
