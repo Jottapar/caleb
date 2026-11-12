@@ -1,0 +1,24 @@
+# Entorno de produccion. Corre junto al de QA en el mismo Droplet (ver
+# 10. Entornos y Despliegue). El .env vive fuera del repo, en el servidor.
+#
+# Los puertos solo se publican en localhost (127.0.0.1): nadie en internet
+# puede pegarle directo a estos contenedores, solo el Nginx del servidor,
+# que es el unico que escucha en 80/443.
+services:
+  back:
+    build:
+      context: ../back
+    container_name: caleb-back-main
+    restart: unless-stopped
+    env_file:
+      - /opt/caleb/main/back.env
+    ports:
+      - "127.0.0.1:8002:8000"
+
+  front:
+    build:
+      context: ../front
+    container_name: caleb-front-main
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3002:80"

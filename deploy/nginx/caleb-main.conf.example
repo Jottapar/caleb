@@ -1,0 +1,24 @@
+# Plantilla del Nginx del HOST (no vive en Docker) para el entorno de
+# produccion. Copiar a /etc/nginx/sites-available/caleb-main en el servidor,
+# reemplazar SUBDOMINIO_MAIN por el dominio/subdominio real una vez
+# comprado, y enlazar en /etc/nginx/sites-enabled.
+#
+# Certbot reescribe este archivo solo para agregar el bloque de HTTPS: no
+# lo edites a mano despues de correrlo (ver Fase 8 en 09. Proyecto Guia).
+server {
+    listen 80;
+    server_name SUBDOMINIO_MAIN;
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8002;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:3002;
+        proxy_set_header Host $host;
+    }
+}

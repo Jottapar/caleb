@@ -5,9 +5,10 @@ import { useState } from "react";
 import { useTaxes } from "../../taxes/hooks/useTaxes";
 import type { Item, ItemCreate, ItemUpdate } from "../types";
 
-type Props = {
-  initialValues?: Item;
-  onSubmit: (data: ItemCreate | ItemUpdate) => void;
+type Props = (
+  | { initialValues?: undefined; onSubmit: (data: ItemCreate) => void }
+  | { initialValues: Item; onSubmit: (data: ItemUpdate) => void }
+) & {
   onCancel?: () => void;
   isSubmitting: boolean;
   errorMessage: string | null;
