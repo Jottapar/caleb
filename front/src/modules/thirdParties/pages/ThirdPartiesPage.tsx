@@ -2,6 +2,7 @@ import { Button, Center, Dialog, Drawer, Heading, HStack, Spinner, Stack, Text }
 import { isAxiosError } from "axios";
 import { useState } from "react";
 
+import { ThirdPartyFilters, type TypeFilter } from "../components/ThirdPartyFilters";
 import { ThirdPartyForm } from "../components/ThirdPartyForm";
 import { ThirdPartyPagination } from "../components/ThirdPartyPagination";
 import { ThirdPartyTable } from "../components/ThirdPartyTable";
@@ -24,6 +25,22 @@ function getErrorMessage(isError: boolean, error: unknown, errorGenerico = ERROR
     : errorGenerico;
 }
 
+// "Pérez" → "perez": asi "perez", "PEREZ" y "Pérez" se encuentran entre si.
+function normalize(text: string) {
+  return text.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
+}
+
+function filterThirdParties(thirdParties: ThirdParty[], name: string, type: TypeFilter) {
+  const search = normalize(name);
+  return thirdParties.filter((thirdParty) => {
+    // Un tercero "ambos" es cliente y proveedor a la vez: sale en los dos filtros.
+    const matchesType =
+      type === "todos" || thirdParty.tipo === type || thirdParty.tipo === "ambos";
+    const matchesName = normalize(thirdParty.nombre).includes(search);
+    return matchesType && matchesName;
+  });
+}
+
 export function ThirdPartiesPage() {
   const thirdParties = useThirdParties();
   const banks = useBanks();
@@ -34,18 +51,33 @@ export function ThirdPartiesPage() {
   const [deletingThirdParty, setDeletingThirdParty] = useState<ThirdParty | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [nameFilter, setNameFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("todos");
 
   // La API devuelve todos los terceros (los desplegables de Recibos los necesitan
-  // completos); aqui solo se corta el pedazo de la pagina actual.
-  const total = thirdParties.data?.length ?? 0;
+  // completos). Primero se filtra y despues se pagina: la pagina se corta del
+  // resultado filtrado, no de la lista completa.
+  const filtered = filterThirdParties(thirdParties.data ?? [], nameFilter, typeFilter);
+  const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   // Si al eliminar se vacia la ultima pagina, se muestra la anterior en vez de una vacia.
   const currentPage = Math.min(page, totalPages);
-  const pageItems = thirdParties.data?.slice((currentPage - 1) * pageSize, currentPage * pageSize) ?? [];
+  const pageItems = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   function handlePageSizeChange(newPageSize: number) {
     setPageSize(newPageSize);
     // Con otro tamano, la pagina en la que estaba ya no tiene sentido: vuelve a la primera.
+    setPage(1);
+  }
+
+  // Con otro filtro los resultados son otros: se empieza desde la primera pagina.
+  function handleNameFilterChange(name: string) {
+    setNameFilter(name);
+    setPage(1);
+  }
+
+  function handleTypeFilterChange(type: TypeFilter) {
+    setTypeFilter(type);
     setPage(1);
   }
 
@@ -104,19 +136,31 @@ export function ThirdPartiesPage() {
 
       {thirdParties.data && thirdParties.data.length > 0 && (
         <>
-          <ThirdPartyTable
-            thirdParties={pageItems}
-            onEdit={setEditingThirdParty}
-            onToggleActive={handleToggleActive}
-            onDelete={setDeletingThirdParty}
+          <ThirdPartyFilters
+            name={nameFilter}
+            type={typeFilter}
+            onNameChange={handleNameFilterChange}
+            onTypeChange={handleTypeFilterChange}
           />
-          <ThirdPartyPagination
-            count={total}
-            page={currentPage}
-            pageSize={pageSize}
-            onPageChange={setPage}
-            onPageSizeChange={handlePageSizeChange}
-          />
+          {total === 0 ? (
+            <Text color="fg.muted">Ningún tercero coincide con el filtro.</Text>
+          ) : (
+            <>
+              <ThirdPartyTable
+                thirdParties={pageItems}
+                onEdit={setEditingThirdParty}
+                onToggleActive={handleToggleActive}
+                onDelete={setDeletingThirdParty}
+              />
+              <ThirdPartyPagination
+                count={total}
+                page={currentPage}
+                pageSize={pageSize}
+                onPageChange={setPage}
+                onPageSizeChange={handlePageSizeChange}
+              />
+            </>
+          )}
         </>
       )}
 

@@ -529,3 +529,127 @@ it("al eliminar el unico tercero de la ultima pagina muestra la pagina anterior"
   expect(await screen.findByText("Tercero 11")).toBeInTheDocument();
   expect(screen.getByText("Mostrando 11–20 de 20")).toBeInTheDocument();
 });
+
+// 60 terceros intercalados: cliente, proveedor, cliente, proveedor...
+// Sin filtro, la primera pagina de 10 trae solo 5 proveedores; con el filtro deben ser 10.
+const INTERCALADOS = Array.from({ length: 60 }, (_, index) => {
+  const numero = String(Math.floor(index / 2) + 1).padStart(2, "0");
+  const esCliente = index % 2 === 0;
+  return {
+    ...ANA,
+    id: index + 1,
+    tipo: esCliente ? ("cliente" as const) : ("proveedor" as const),
+    nombre: esCliente ? `Cliente ${numero}` : `Proveedor ${numero}`,
+  };
+});
+
+it("al filtrar por tipo pagina sobre los filtrados, no sobre la lista completa", async () => {
+  server.use(http.get(URL, () => HttpResponse.json(INTERCALADOS)));
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("Cliente 01");
+  await user.selectOptions(screen.getByLabelText(/filtrar por tipo/i), "proveedor");
+
+  expect(screen.getByText("Proveedor 01")).toBeInTheDocument();
+  expect(screen.getByText("Proveedor 10")).toBeInTheDocument();
+  expect(screen.queryByText("Proveedor 11")).not.toBeInTheDocument();
+  expect(screen.queryByText("Cliente 01")).not.toBeInTheDocument();
+  expect(screen.getByText("Mostrando 1–10 de 30")).toBeInTheDocument();
+});
+
+it("con 50 por pagina muestra todos los filtrados aunque en la lista completa esten mas atras", async () => {
+  server.use(http.get(URL, () => HttpResponse.json(INTERCALADOS)));
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("Cliente 01");
+  await user.selectOptions(screen.getByRole("combobox", { name: /terceros por página/i }), "50");
+  await user.selectOptions(screen.getByLabelText(/filtrar por tipo/i), "proveedor");
+
+  // "Proveedor 30" es el tercero 60 de la lista: sin filtro quedaria en la segunda pagina.
+  expect(screen.getByText("Proveedor 30")).toBeInTheDocument();
+  expect(screen.getByText("Mostrando 1–30 de 30")).toBeInTheDocument();
+});
+
+it("al filtrar vuelve a la primera pagina", async () => {
+  server.use(http.get(URL, () => HttpResponse.json(INTERCALADOS)));
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("Cliente 01");
+  await user.click(screen.getByRole("button", { name: "Página 3" }));
+  await user.selectOptions(screen.getByLabelText(/filtrar por tipo/i), "cliente");
+
+  expect(screen.getByText("Cliente 01")).toBeInTheDocument();
+  expect(screen.getByText("Mostrando 1–10 de 30")).toBeInTheDocument();
+});
+
+it("el filtro de clientes y el de proveedores incluyen a los terceros de tipo ambos", async () => {
+  const terceros = [
+    { ...ANA, id: 1, tipo: "cliente", nombre: "Solo Cliente" },
+    { ...ANA, id: 2, tipo: "proveedor", nombre: "Solo Proveedor" },
+    { ...ANA, id: 3, tipo: "ambos", nombre: "Los Dos" },
+  ];
+  server.use(http.get(URL, () => HttpResponse.json(terceros)));
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("Solo Cliente");
+  const tipo = screen.getByLabelText(/filtrar por tipo/i);
+
+  await user.selectOptions(tipo, "cliente");
+  expect(screen.getByText("Solo Cliente")).toBeInTheDocument();
+  expect(screen.getByText("Los Dos")).toBeInTheDocument();
+  expect(screen.queryByText("Solo Proveedor")).not.toBeInTheDocument();
+
+  await user.selectOptions(tipo, "proveedor");
+  expect(screen.getByText("Solo Proveedor")).toBeInTheDocument();
+  expect(screen.getByText("Los Dos")).toBeInTheDocument();
+  expect(screen.queryByText("Solo Cliente")).not.toBeInTheDocument();
+});
+
+it("busca por nombre sin importar mayusculas ni tildes", async () => {
+  const terceros = [
+    { ...ANA, id: 1, nombre: "Ana Pérez" },
+    { ...ANA, id: 2, nombre: "Carlos Gómez" },
+  ];
+  server.use(http.get(URL, () => HttpResponse.json(terceros)));
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("Ana Pérez");
+  await user.type(screen.getByLabelText(/buscar tercero/i), "PEREZ");
+
+  expect(screen.getByText("Ana Pérez")).toBeInTheDocument();
+  expect(screen.queryByText("Carlos Gómez")).not.toBeInTheDocument();
+  expect(screen.getByText("Mostrando 1–1 de 1")).toBeInTheDocument();
+});
+
+it("combina el filtro de nombre con el de tipo", async () => {
+  server.use(http.get(URL, () => HttpResponse.json(INTERCALADOS)));
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("Cliente 01");
+  await user.selectOptions(screen.getByLabelText(/filtrar por tipo/i), "proveedor");
+  await user.type(screen.getByLabelText(/buscar tercero/i), "2");
+
+  // Proveedores con "2" en el nombre: 02, 12, 20 a 29 → 12 en total.
+  expect(screen.getByText("Proveedor 02")).toBeInTheDocument();
+  expect(screen.queryByText("Cliente 02")).not.toBeInTheDocument();
+  expect(screen.getByText("Mostrando 1–10 de 12")).toBeInTheDocument();
+});
+
+it("avisa cuando ningun tercero coincide con el filtro", async () => {
+  server.use(http.get(URL, () => HttpResponse.json([ANA])));
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("Ana Pérez");
+  await user.type(screen.getByLabelText(/buscar tercero/i), "zzz");
+
+  expect(screen.getByText(/ningún tercero coincide con el filtro/i)).toBeInTheDocument();
+  // El buscador sigue a la vista para poder corregir lo que se escribio.
+  expect(screen.getByLabelText(/buscar tercero/i)).toHaveValue("zzz");
+});
