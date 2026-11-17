@@ -3,6 +3,7 @@ import { isAxiosError } from "axios";
 import { useState } from "react";
 
 import { ThirdPartyForm } from "../components/ThirdPartyForm";
+import { ThirdPartyPagination } from "../components/ThirdPartyPagination";
 import { ThirdPartyTable } from "../components/ThirdPartyTable";
 import { useBanks } from "../hooks/useBanks";
 import { useCreateThirdParty } from "../hooks/useCreateThirdParty";
@@ -31,6 +32,22 @@ export function ThirdPartiesPage() {
   const deleteThirdParty = useDeleteThirdParty();
   const [editingThirdParty, setEditingThirdParty] = useState<ThirdParty | null>(null);
   const [deletingThirdParty, setDeletingThirdParty] = useState<ThirdParty | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  // La API devuelve todos los terceros (los desplegables de Recibos los necesitan
+  // completos); aqui solo se corta el pedazo de la pagina actual.
+  const total = thirdParties.data?.length ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  // Si al eliminar se vacia la ultima pagina, se muestra la anterior en vez de una vacia.
+  const currentPage = Math.min(page, totalPages);
+  const pageItems = thirdParties.data?.slice((currentPage - 1) * pageSize, currentPage * pageSize) ?? [];
+
+  function handlePageSizeChange(newPageSize: number) {
+    setPageSize(newPageSize);
+    // Con otro tamano, la pagina en la que estaba ya no tiene sentido: vuelve a la primera.
+    setPage(1);
+  }
 
   function handleCreate(data: ThirdPartyCreate) {
     createThirdParty.mutate(data);
@@ -86,12 +103,21 @@ export function ThirdPartiesPage() {
       )}
 
       {thirdParties.data && thirdParties.data.length > 0 && (
-        <ThirdPartyTable
-          thirdParties={thirdParties.data}
-          onEdit={setEditingThirdParty}
-          onToggleActive={handleToggleActive}
-          onDelete={setDeletingThirdParty}
-        />
+        <>
+          <ThirdPartyTable
+            thirdParties={pageItems}
+            onEdit={setEditingThirdParty}
+            onToggleActive={handleToggleActive}
+            onDelete={setDeletingThirdParty}
+          />
+          <ThirdPartyPagination
+            count={total}
+            page={currentPage}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={handlePageSizeChange}
+          />
+        </>
       )}
 
       {editingThirdParty && (

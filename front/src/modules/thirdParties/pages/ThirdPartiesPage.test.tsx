@@ -431,3 +431,101 @@ it("al editar en el drawer tambien valida el formato antes de guardar", async ()
   expect(await screen.findByText("El teléfono solo puede tener números")).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: /editar tercero/i })).toBeInTheDocument();
 });
+
+// 23 terceros: "Tercero 01" ... "Tercero 23". Con 10 por pagina son 3 paginas.
+const VEINTITRES = Array.from({ length: 23 }, (_, index) => ({
+  ...ANA,
+  id: index + 1,
+  nombre: `Tercero ${String(index + 1).padStart(2, "0")}`,
+}));
+
+it("muestra solo los primeros 10 terceros al cargar", async () => {
+  server.use(http.get(URL, () => HttpResponse.json(VEINTITRES)));
+
+  renderPage();
+
+  expect(await screen.findByText("Tercero 01")).toBeInTheDocument();
+  expect(screen.getByText("Tercero 10")).toBeInTheDocument();
+  expect(screen.queryByText("Tercero 11")).not.toBeInTheDocument();
+  expect(screen.getByText("Mostrando 1–10 de 23")).toBeInTheDocument();
+});
+
+it("pasa a la siguiente pagina con el boton de pagina siguiente", async () => {
+  server.use(http.get(URL, () => HttpResponse.json(VEINTITRES)));
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("Tercero 01");
+  await user.click(screen.getByRole("button", { name: /página siguiente/i }));
+
+  expect(await screen.findByText("Tercero 11")).toBeInTheDocument();
+  expect(screen.queryByText("Tercero 01")).not.toBeInTheDocument();
+  expect(screen.getByText("Mostrando 11–20 de 23")).toBeInTheDocument();
+});
+
+it("la ultima pagina muestra solo los terceros que quedan", async () => {
+  server.use(http.get(URL, () => HttpResponse.json(VEINTITRES)));
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("Tercero 01");
+  await user.click(screen.getByRole("button", { name: "Página 3" }));
+
+  expect(await screen.findByText("Tercero 21")).toBeInTheDocument();
+  expect(screen.getByText("Tercero 23")).toBeInTheDocument();
+  expect(screen.getByText("Mostrando 21–23 de 23")).toBeInTheDocument();
+});
+
+it("permite ver 50 por pagina y solo ofrece 10 y 50", async () => {
+  server.use(http.get(URL, () => HttpResponse.json(VEINTITRES)));
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("Tercero 01");
+  const selector = screen.getByRole("combobox", { name: /terceros por página/i });
+  const opciones = within(selector)
+    .getAllByRole("option")
+    .map((option) => option.textContent);
+  await user.selectOptions(selector, "50");
+
+  expect(opciones).toEqual(["10", "50"]);
+  expect(screen.getByText("Tercero 23")).toBeInTheDocument();
+  expect(screen.getByText("Mostrando 1–23 de 23")).toBeInTheDocument();
+});
+
+it("al cambiar a 50 por pagina vuelve a la primera pagina", async () => {
+  server.use(http.get(URL, () => HttpResponse.json(VEINTITRES)));
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("Tercero 01");
+  await user.click(screen.getByRole("button", { name: "Página 3" }));
+  await user.selectOptions(
+    screen.getByRole("combobox", { name: /terceros por página/i }),
+    "50",
+  );
+
+  expect(screen.getByText("Tercero 01")).toBeInTheDocument();
+});
+
+it("al eliminar el unico tercero de la ultima pagina muestra la pagina anterior", async () => {
+  let terceros = VEINTITRES.slice(0, 21); // la pagina 3 solo tiene "Tercero 21"
+  server.use(
+    http.get(URL, () => HttpResponse.json(terceros)),
+    http.delete(`${URL}/:id`, () => {
+      terceros = terceros.slice(0, 20);
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("Tercero 01");
+  await user.click(screen.getByRole("button", { name: "Página 3" }));
+  await user.click(await screen.findByRole("button", { name: /^eliminar$/i }));
+  const dialog = await screen.findByRole("alertdialog");
+  await user.click(within(dialog).getByRole("button", { name: /eliminar/i }));
+
+  expect(await screen.findByText("Tercero 11")).toBeInTheDocument();
+  expect(screen.getByText("Mostrando 11–20 de 20")).toBeInTheDocument();
+});
