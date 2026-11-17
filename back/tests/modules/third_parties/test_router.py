@@ -222,6 +222,70 @@ def test_create_third_party_rejects_inactive_bank(logged_in_client, inactive_ban
     assert response.status_code == 404
 
 
+@pytest.mark.parametrize("email", ["carlos", "carlos@", "carlos@dominio", "car los@dominio.com"])
+def test_create_third_party_rejects_invalid_email(logged_in_client, email):
+    response = logged_in_client.post(
+        URL, json=_payload(email=email), headers=_csrf_headers(logged_in_client)
+    )
+
+    assert response.status_code == 422
+    assert response.json()["message"] == "El correo no tiene un formato válido"
+
+
+@pytest.mark.parametrize("telefono", ["300 123 4567", "300-1234567", "+573001234567", "abc"])
+def test_create_third_party_rejects_phone_with_non_digits(logged_in_client, telefono):
+    response = logged_in_client.post(
+        URL, json=_payload(telefono=telefono), headers=_csrf_headers(logged_in_client)
+    )
+
+    assert response.status_code == 422
+    assert response.json()["message"] == "El teléfono solo puede tener números"
+
+
+@pytest.mark.parametrize("numero_cuenta", ["0123-4567", "12 34", "ABC123"])
+def test_create_third_party_rejects_account_number_with_non_digits(
+    logged_in_client, bank, numero_cuenta
+):
+    response = logged_in_client.post(
+        URL,
+        json=_payload(
+            cuenta_bancaria={
+                "banco_id": bank.id,
+                "tipo_cuenta": "ahorros",
+                "numero_cuenta": numero_cuenta,
+            }
+        ),
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["message"] == "El número de cuenta solo puede tener números"
+
+
+def test_create_third_party_accepts_account_number_with_20_digits(logged_in_client, bank):
+    body = _create(
+        logged_in_client,
+        cuenta_bancaria={"banco_id": bank.id, "tipo_cuenta": "ahorros", "numero_cuenta": "1" * 20},
+    )
+
+    assert body["cuenta_bancaria"]["numero_cuenta"] == "1" * 20
+
+
+def test_create_third_party_rejects_account_number_with_more_than_20_digits(
+    logged_in_client, bank
+):
+    response = logged_in_client.post(
+        URL,
+        json=_payload(
+            cuenta_bancaria={"banco_id": bank.id, "tipo_cuenta": "ahorros", "numero_cuenta": "1" * 21}
+        ),
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["message"] == "El número de cuenta no puede tener más de 20 dígitos"
+
+
 # ---------- editar ----------
 
 

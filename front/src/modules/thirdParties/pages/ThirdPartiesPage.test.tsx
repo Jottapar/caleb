@@ -350,3 +350,84 @@ it("al editar muestra todos los datos, incluida la direccion", async () => {
   expect(screen.getByDisplayValue("ana@example.com")).toBeInTheDocument();
   expect(screen.getByDisplayValue("3001234567")).toBeInTheDocument();
 });
+
+// Si el front deja pasar algo, este handler hace fallar el test: no debe llegar al backend.
+function failIfPosted() {
+  return http.post(URL, () => {
+    throw new Error("El formulario no debia enviarse");
+  });
+}
+
+it("al crear no envia y avisa si el correo no tiene formato de correo", async () => {
+  server.use(http.get(URL, () => HttpResponse.json([])), failIfPosted());
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.type(screen.getByLabelText(/correo/i), "carlos@dominio");
+  await user.click(screen.getByRole("button", { name: /guardar/i }));
+
+  expect(await screen.findByText(/escribe un correo válido/i)).toBeInTheDocument();
+});
+
+it("al crear no envia y avisa si el telefono tiene algo distinto de numeros", async () => {
+  server.use(http.get(URL, () => HttpResponse.json([])), failIfPosted());
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.type(screen.getByLabelText(/teléfono/i), "300 123 4567");
+  await user.click(screen.getByRole("button", { name: /guardar/i }));
+
+  expect(await screen.findByText("El teléfono solo puede tener números")).toBeInTheDocument();
+});
+
+it("al crear no envia y avisa si el numero de cuenta tiene algo distinto de numeros", async () => {
+  server.use(http.get(URL, () => HttpResponse.json([])), failIfPosted());
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.selectOptions(
+    screen.getByLabelText(/^banco/i),
+    await screen.findByRole("option", { name: "Bancolombia" }),
+  );
+  await user.type(screen.getByLabelText(/número de cuenta/i), "0123-456");
+  await user.click(screen.getByRole("button", { name: /guardar/i }));
+
+  expect(
+    await screen.findByText("El número de cuenta solo puede tener números"),
+  ).toBeInTheDocument();
+});
+
+it("el numero de cuenta no deja escribir mas de 20 digitos", async () => {
+  server.use(http.get(URL, () => HttpResponse.json([])));
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.selectOptions(
+    screen.getByLabelText(/^banco/i),
+    await screen.findByRole("option", { name: "Bancolombia" }),
+  );
+  const numero = screen.getByLabelText(/número de cuenta/i);
+  await user.type(numero, "1".repeat(25));
+
+  expect(numero).toHaveValue("1".repeat(20));
+});
+
+it("al editar en el drawer tambien valida el formato antes de guardar", async () => {
+  server.use(
+    http.get(URL, () => HttpResponse.json([ANA])),
+    http.patch(`${URL}/:id`, () => {
+      throw new Error("El formulario no debia enviarse");
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: /editar/i }));
+  const telefono = await screen.findByDisplayValue("3001234567");
+  await user.clear(telefono);
+  await user.type(telefono, "300-abc");
+  await user.click(screen.getByRole("button", { name: /guardar/i }));
+
+  expect(await screen.findByText("El teléfono solo puede tener números")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: /editar tercero/i })).toBeInTheDocument();
+});

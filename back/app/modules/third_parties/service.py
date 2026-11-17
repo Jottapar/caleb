@@ -1,3 +1,5 @@
+import re
+
 from sqlmodel import Session, select
 
 from app.core.errors import BusinessError, NotFoundError
@@ -7,6 +9,13 @@ from app.modules.third_parties.schemas import BankAccountData, ThirdPartyCreate,
 
 TIPOS_VALIDOS = {"cliente", "proveedor", "ambos"}
 TIPOS_CUENTA_VALIDOS = {"ahorros", "corriente"}
+MAX_DIGITOS_CUENTA = 20
+
+# Algo, una arroba, algo, un punto y algo, sin espacios: `nombre@dominio.com`.
+# No intenta ser perfecto (eso solo lo confirma enviar un correo); atrapa los errores de tecleo.
+FORMATO_CORREO = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+# [0-9] y no \d: \d tambien acepta digitos de otros alfabetos, como "٣".
+SOLO_DIGITOS = re.compile(r"[0-9]+")
 
 # Columna -> como se le nombra al usuario en el mensaje de error.
 # Obligatorios para todo tercero, sea cliente, proveedor o ambos.
@@ -20,12 +29,17 @@ CAMPOS_OBLIGATORIOS = {
 
 
 def _validate_fields(tipo: str, campos: dict[str, str]) -> None:
-    """Valida el tipo y que ningun campo obligatorio venga vacio o solo con espacios."""
+    """Valida el tipo, que ningun campo obligatorio venga vacio y el formato del correo y el telefono."""
     if tipo not in TIPOS_VALIDOS:
         raise BusinessError(f"Tipo de tercero invalido: {tipo}")
     for columna, etiqueta in CAMPOS_OBLIGATORIOS.items():
         if not campos[columna].strip():
             raise BusinessError(f"El {etiqueta} del tercero es obligatorio")
+    # fullmatch: el texto COMPLETO debe cumplir el patron, no solo una parte.
+    if not FORMATO_CORREO.fullmatch(campos["email"].strip()):
+        raise BusinessError("El correo no tiene un formato válido")
+    if not SOLO_DIGITOS.fullmatch(campos["telefono"].strip()):
+        raise BusinessError("El teléfono solo puede tener números")
 
 
 def _build_bank_account(
@@ -38,6 +52,10 @@ def _build_bank_account(
     numero_cuenta = data.numero_cuenta.strip()
     if not numero_cuenta:
         raise BusinessError("El número de cuenta es obligatorio")
+    if not SOLO_DIGITOS.fullmatch(numero_cuenta):
+        raise BusinessError("El número de cuenta solo puede tener números")
+    if len(numero_cuenta) > MAX_DIGITOS_CUENTA:
+        raise BusinessError(f"El número de cuenta no puede tener más de {MAX_DIGITOS_CUENTA} dígitos")
 
     return ThirdPartyBankAccount(
         empresa_id=empresa_id,

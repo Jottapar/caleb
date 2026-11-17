@@ -3,6 +3,38 @@ import { useState } from "react";
 
 import type { AccountType, Bank, ThirdParty, ThirdPartyCreate, ThirdPartyType } from "../types";
 
+// Las mismas reglas que valida el backend (third_parties/service.py). El backend
+// es la regla; esto es para avisar antes de enviar.
+const FORMATO_CORREO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const SOLO_DIGITOS = /^[0-9]+$/;
+const MAX_DIGITOS_CUENTA = 20;
+
+type FormErrors = {
+  email?: string;
+  telefono?: string;
+  numeroCuenta?: string;
+};
+
+// Solo revisa el formato de lo que ya esta escrito. Si un campo obligatorio
+// llega vacio, lo dice el backend ("El correo del tercero es obligatorio").
+function validate(email: string, telefono: string, numeroCuenta: string, conCuenta: boolean) {
+  const errors: FormErrors = {};
+  if (email.trim() && !FORMATO_CORREO.test(email.trim())) {
+    errors.email = "Escribe un correo válido, por ejemplo nombre@dominio.com";
+  }
+  if (telefono.trim() && !SOLO_DIGITOS.test(telefono.trim())) {
+    errors.telefono = "El teléfono solo puede tener números";
+  }
+  if (conCuenta && numeroCuenta.trim()) {
+    if (!SOLO_DIGITOS.test(numeroCuenta.trim())) {
+      errors.numeroCuenta = "El número de cuenta solo puede tener números";
+    } else if (numeroCuenta.trim().length > MAX_DIGITOS_CUENTA) {
+      errors.numeroCuenta = `El número de cuenta no puede tener más de ${MAX_DIGITOS_CUENTA} dígitos`;
+    }
+  }
+  return errors;
+}
+
 type Props = {
   banks: Bank[];
   banksError: boolean;
@@ -33,9 +65,16 @@ export function ThirdPartyForm({
   const [bancoId, setBancoId] = useState(cuentaInicial ? String(cuentaInicial.banco_id) : "");
   const [tipoCuenta, setTipoCuenta] = useState<AccountType>(cuentaInicial?.tipo_cuenta ?? "ahorros");
   const [numeroCuenta, setNumeroCuenta] = useState(cuentaInicial?.numero_cuenta ?? "");
+  const [errors, setErrors] = useState<FormErrors>({});
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
+    const nuevosErrores = validate(email, telefono, numeroCuenta, Boolean(bancoId));
+    setErrors(nuevosErrores);
+    // Con algun error no se envia nada: el usuario corrige primero.
+    if (Object.keys(nuevosErrores).length > 0) {
+      return;
+    }
     onSubmit({
       tipo,
       nombre,
@@ -86,14 +125,20 @@ export function ThirdPartyForm({
         <Input value={documento} onChange={(event) => setDocumento(event.target.value)} />
       </Field.Root>
 
-      <Field.Root>
+      <Field.Root invalid={Boolean(errors.email)}>
         <Field.Label>Correo</Field.Label>
-        <Input value={email} onChange={(event) => setEmail(event.target.value)} />
+        <Input inputMode="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+        <Field.ErrorText>{errors.email}</Field.ErrorText>
       </Field.Root>
 
-      <Field.Root>
+      <Field.Root invalid={Boolean(errors.telefono)}>
         <Field.Label>Teléfono</Field.Label>
-        <Input value={telefono} onChange={(event) => setTelefono(event.target.value)} />
+        <Input
+          inputMode="numeric"
+          value={telefono}
+          onChange={(event) => setTelefono(event.target.value)}
+        />
+        <Field.ErrorText>{errors.telefono}</Field.ErrorText>
       </Field.Root>
 
       <Field.Root>
@@ -137,9 +182,16 @@ export function ThirdPartyForm({
             </NativeSelect.Root>
           </Field.Root>
 
-          <Field.Root>
+          <Field.Root invalid={Boolean(errors.numeroCuenta)}>
             <Field.Label>Número de cuenta</Field.Label>
-            <Input value={numeroCuenta} onChange={(event) => setNumeroCuenta(event.target.value)} />
+            <Input
+              inputMode="numeric"
+              maxLength={MAX_DIGITOS_CUENTA}
+              value={numeroCuenta}
+              onChange={(event) => setNumeroCuenta(event.target.value)}
+            />
+            <Field.HelperText>Solo números, máximo {MAX_DIGITOS_CUENTA}.</Field.HelperText>
+            <Field.ErrorText>{errors.numeroCuenta}</Field.ErrorText>
           </Field.Root>
         </>
       )}
