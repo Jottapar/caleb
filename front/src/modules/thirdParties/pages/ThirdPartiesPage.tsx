@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { ThirdPartyForm } from "../components/ThirdPartyForm";
 import { ThirdPartyTable } from "../components/ThirdPartyTable";
+import { useBanks } from "../hooks/useBanks";
 import { useCreateThirdParty } from "../hooks/useCreateThirdParty";
 import { useDeleteThirdParty } from "../hooks/useDeleteThirdParty";
 import { useThirdParties } from "../hooks/useThirdParties";
@@ -24,6 +25,7 @@ function getErrorMessage(isError: boolean, error: unknown, errorGenerico = ERROR
 
 export function ThirdPartiesPage() {
   const thirdParties = useThirdParties();
+  const banks = useBanks();
   const createThirdParty = useCreateThirdParty();
   const updateThirdParty = useUpdateThirdParty();
   const deleteThirdParty = useDeleteThirdParty();
@@ -62,6 +64,8 @@ export function ThirdPartiesPage() {
       <Heading size="xl">Clientes y proveedores</Heading>
 
       <ThirdPartyForm
+        banks={banks.data ?? []}
+        banksError={banks.isError}
         onSubmit={handleCreate}
         isSubmitting={createThirdParty.isPending}
         errorMessage={getErrorMessage(createThirdParty.isError, createThirdParty.error)}
@@ -105,6 +109,8 @@ export function ThirdPartiesPage() {
               <Drawer.Body>
                 <ThirdPartyForm
                   key={editingThirdParty.id}
+                  banks={banks.data ?? []}
+                  banksError={banks.isError}
                   initialValues={editingThirdParty}
                   onSubmit={handleUpdate}
                   onCancel={() => setEditingThirdParty(null)}

@@ -15,7 +15,7 @@ router = APIRouter(
 
 @router.post("", response_model=ThirdPartyRead, status_code=status.HTTP_201_CREATED)
 def create_third_party(data: ThirdPartyCreate, session: SessionDep, empresa_id: CurrentCompanyId):
-    return service.create_third_party(session, empresa_id=empresa_id, **data.model_dump())
+    return service.create_third_party(session, empresa_id, data)
 
 
 @router.get("", response_model=list[ThirdPartyRead])

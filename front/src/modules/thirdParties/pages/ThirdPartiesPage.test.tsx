@@ -7,8 +7,16 @@ import { server } from "../../../shared/test/server";
 import { ThirdPartiesPage } from "./ThirdPartiesPage";
 
 const URL = "/api/v1/third-parties";
+const BANKS_URL = "/api/v1/banks";
+
+const BANKS = [
+  { id: 1, nombre: "Bancolombia" },
+  { id: 2, nombre: "Davivienda" },
+];
 
 function renderPage() {
+  // El formulario siempre pide la lista de bancos para el desplegable.
+  server.use(http.get(BANKS_URL, () => HttpResponse.json(BANKS)));
   renderWithProviders([{ path: "/", element: <ThirdPartiesPage /> }]);
 }
 
@@ -23,7 +31,9 @@ it("muestra la lista de terceros que devuelve la API", async () => {
           documento: "123",
           email: "ana@example.com",
           telefono: "3001234567",
+          direccion: "Calle 1 # 2-3",
           activo: true,
+          cuenta_bancaria: null,
         },
       ]),
     ),
@@ -48,7 +58,7 @@ it("registra un tercero y lo agrega a la lista", async () => {
     http.get(URL, () => HttpResponse.json(terceros)),
     http.post(URL, async ({ request }) => {
       const data = (await request.json()) as Record<string, unknown>;
-      const creado = { id: 1, documento: "", email: "", telefono: "", activo: true, ...data };
+      const creado = { id: 1, activo: true, ...data };
       terceros = [creado];
       return HttpResponse.json(creado, { status: 201 });
     }),
@@ -87,7 +97,9 @@ const ANA = {
   documento: "123",
   email: "ana@example.com",
   telefono: "3001234567",
+  direccion: "Calle 1 # 2-3",
   activo: true,
+  cuenta_bancaria: null,
 };
 
 it("abre el drawer con los datos del tercero al hacer click en Editar", async () => {
@@ -225,4 +237,116 @@ it("no elimina el tercero si cancelo el dialogo", async () => {
 
   expect(screen.queryByRole("heading", { name: /eliminar a ana/i })).not.toBeInTheDocument();
   expect(screen.getByText("Ana Pérez")).toBeInTheDocument();
+});
+
+it("envia la cuenta bancaria elegida", async () => {
+  let terceros: unknown[] = [];
+  let recibido: Record<string, unknown> = {};
+  server.use(
+    http.get(URL, () => HttpResponse.json(terceros)),
+    http.post(URL, async ({ request }) => {
+      recibido = (await request.json()) as Record<string, unknown>;
+      const creado = {
+        id: 1,
+        activo: true,
+        ...recibido,
+        cuenta_bancaria: {
+          banco_id: 1,
+          banco_nombre: "Bancolombia",
+          tipo_cuenta: "corriente",
+          numero_cuenta: "0123456789",
+        },
+      };
+      terceros = [creado];
+      return HttpResponse.json(creado, { status: 201 });
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.type(screen.getByLabelText(/nombre/i), "Insumos SAS");
+  await user.selectOptions(screen.getByLabelText(/^banco/i), await screen.findByRole("option", { name: "Bancolombia" }));
+  await user.selectOptions(screen.getByLabelText(/tipo de cuenta/i), "corriente");
+  await user.type(screen.getByLabelText(/número de cuenta/i), "0123456789");
+  await user.click(screen.getByRole("button", { name: /guardar/i }));
+
+  expect(await screen.findByText("Insumos SAS")).toBeInTheDocument();
+  expect(recibido.cuenta_bancaria).toEqual({
+    banco_id: 1,
+    tipo_cuenta: "corriente",
+    numero_cuenta: "0123456789",
+  });
+});
+
+it("envia la cuenta bancaria en null si no se elige banco", async () => {
+  let recibido: Record<string, unknown> = {};
+  server.use(
+    http.get(URL, () => HttpResponse.json([])),
+    http.post(URL, async ({ request }) => {
+      recibido = (await request.json()) as Record<string, unknown>;
+      return HttpResponse.json({ id: 1, activo: true, ...recibido }, { status: 201 });
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.type(screen.getByLabelText(/nombre/i), "Carlos");
+  await user.click(screen.getByRole("button", { name: /guardar/i }));
+
+  await vi.waitFor(() => expect(recibido).toHaveProperty("cuenta_bancaria", null));
+  expect(screen.queryByLabelText(/número de cuenta/i)).not.toBeInTheDocument();
+});
+
+it("al editar muestra la cuenta bancaria que ya tenia el tercero", async () => {
+  const conCuenta = {
+    ...ANA,
+    cuenta_bancaria: {
+      banco_id: 2,
+      banco_nombre: "Davivienda",
+      tipo_cuenta: "ahorros",
+      numero_cuenta: "555",
+    },
+  };
+  server.use(http.get(URL, () => HttpResponse.json([conCuenta])));
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: /editar/i }));
+  await screen.findByRole("heading", { name: /editar tercero/i });
+
+  expect(await screen.findByDisplayValue("555")).toBeInTheDocument();
+  expect(screen.getAllByDisplayValue("Davivienda")).toHaveLength(1);
+});
+
+it("la lista no muestra direccion ni cuenta bancaria", async () => {
+  const conCuenta = {
+    ...ANA,
+    cuenta_bancaria: {
+      banco_id: 1,
+      banco_nombre: "Bancolombia",
+      tipo_cuenta: "ahorros",
+      numero_cuenta: "555",
+    },
+  };
+  server.use(http.get(URL, () => HttpResponse.json([conCuenta])));
+
+  renderPage();
+
+  expect(await screen.findByText("Ana Pérez")).toBeInTheDocument();
+  expect(screen.queryByRole("columnheader", { name: /dirección/i })).not.toBeInTheDocument();
+  expect(screen.queryByText("Calle 1 # 2-3")).not.toBeInTheDocument();
+  expect(screen.queryByText("555")).not.toBeInTheDocument();
+});
+
+it("al editar muestra todos los datos, incluida la direccion", async () => {
+  server.use(http.get(URL, () => HttpResponse.json([ANA])));
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: /editar/i }));
+  await screen.findByRole("heading", { name: /editar tercero/i });
+
+  expect(screen.getByDisplayValue("Calle 1 # 2-3")).toBeInTheDocument();
+  expect(screen.getByDisplayValue("ana@example.com")).toBeInTheDocument();
+  expect(screen.getByDisplayValue("3001234567")).toBeInTheDocument();
 });

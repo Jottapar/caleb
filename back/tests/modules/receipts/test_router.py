@@ -10,10 +10,18 @@ from app.modules.receipts.models import AccountReceivablePayment
 from app.modules.receipts.schemas import ReceiptItemLineCreate
 from app.modules.taxes.models import Tax
 from app.modules.third_parties import service as third_parties_service
+from app.modules.third_parties.schemas import ThirdPartyCreate
 
 URL = "/api/v1/receipts"
 ITEMS_URL = "/api/v1/items"
 THIRD_PARTIES_URL = "/api/v1/third-parties"
+# Los campos obligatorios de un tercero; cada test cambia solo tipo y nombre.
+THIRD_PARTY_DATA = {
+    "documento": "123",
+    "email": "tercero@example.com",
+    "telefono": "3001234567",
+    "direccion": "Calle 1 # 2-3",
+}
 
 
 def _csrf_headers(logged_in_client):
@@ -32,7 +40,7 @@ def _sin_impuesto_id(session) -> int:
 def _create_cliente(logged_in_client) -> int:
     response = logged_in_client.post(
         THIRD_PARTIES_URL,
-        json={"tipo": "cliente", "nombre": "Cliente de prueba"},
+        json={"tipo": "cliente", "nombre": "Cliente de prueba", **THIRD_PARTY_DATA},
         headers=_csrf_headers(logged_in_client),
     )
     return response.json()["id"]
@@ -160,7 +168,9 @@ def test_list_receipts_returns_only_current_company_with_number(logged_in_client
         cantidad_inicial=Decimal("5"),
     )
     ajeno_tercero = third_parties_service.create_third_party(
-        session, empresa_id=otra_empresa.id, tipo="cliente", nombre="Cliente Ajeno"
+        session,
+        otra_empresa.id,
+        ThirdPartyCreate(tipo="cliente", nombre="Cliente Ajeno", **THIRD_PARTY_DATA),
     )
     receipts_service.create_receipt(
         session,
@@ -201,7 +211,7 @@ def test_create_receipt_rejects_third_party_of_type_proveedor(logged_in_client, 
     item = _create_item(logged_in_client, session)
     proveedor = logged_in_client.post(
         THIRD_PARTIES_URL,
-        json={"tipo": "proveedor", "nombre": "Proveedor de prueba"},
+        json={"tipo": "proveedor", "nombre": "Proveedor de prueba", **THIRD_PARTY_DATA},
         headers=_csrf_headers(logged_in_client),
     ).json()
 
@@ -270,7 +280,9 @@ def test_get_receipt_from_other_company_returns_404(logged_in_client, session):
         cantidad_inicial=Decimal("5"),
     )
     ajeno_tercero = third_parties_service.create_third_party(
-        session, empresa_id=otra_empresa.id, tipo="cliente", nombre="Cliente Ajeno"
+        session,
+        otra_empresa.id,
+        ThirdPartyCreate(tipo="cliente", nombre="Cliente Ajeno", **THIRD_PARTY_DATA),
     )
     ajeno_recibo = receipts_service.create_receipt(
         session,
@@ -352,7 +364,9 @@ def test_cancel_receipt_from_other_company_returns_404(logged_in_client, session
         cantidad_inicial=Decimal("5"),
     )
     ajeno_tercero = third_parties_service.create_third_party(
-        session, empresa_id=otra_empresa.id, tipo="cliente", nombre="Cliente Ajeno"
+        session,
+        otra_empresa.id,
+        ThirdPartyCreate(tipo="cliente", nombre="Cliente Ajeno", **THIRD_PARTY_DATA),
     )
     ajeno_recibo = receipts_service.create_receipt(
         session,
@@ -478,7 +492,9 @@ def test_accounts_receivable_returns_only_current_company(logged_in_client, sess
         cantidad_inicial=Decimal("5"),
     )
     ajeno_tercero = third_parties_service.create_third_party(
-        session, empresa_id=otra_empresa.id, tipo="cliente", nombre="Cliente Ajeno"
+        session,
+        otra_empresa.id,
+        ThirdPartyCreate(tipo="cliente", nombre="Cliente Ajeno", **THIRD_PARTY_DATA),
     )
     receipts_service.create_receipt(
         session,
