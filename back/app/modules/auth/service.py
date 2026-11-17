@@ -11,7 +11,7 @@ CREDENCIALES_INVALIDAS = "Correo o contraseña incorrectos"
 
 
 def authenticate(session: Session, email: str, password: str) -> User:
-    user = session.exec(select(User).where(User.email == email)).first()
+    user = users_service.get_user_by_email(session, email)
     if not user or not user.activo or not password_hash.verify(password, user.password_hash):
         raise UnauthorizedError(CREDENCIALES_INVALIDAS)
     return user

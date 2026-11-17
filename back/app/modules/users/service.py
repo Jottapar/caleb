@@ -1,17 +1,35 @@
+from sqlalchemy import func
 from sqlmodel import Session, select
 
-from app.core.errors import AlreadyExistsError
+from app.core.errors import AlreadyExistsError, NotFoundError
 from app.core.security import password_hash
 from app.modules.companies.models import Company
 from app.modules.taxes import service as taxes_service
 from app.modules.users.models import User, UserCompany
 
 
+def normalize_email(email: str) -> str:
+    """El correo sin espacios alrededor y en minusculas: `Juan@Gmail.com ` -> `juan@gmail.com`."""
+    return email.strip().lower()
+
+
+def get_user_by_email(session: Session, email: str) -> User | None:
+    """Busca un usuario por correo sin importar mayusculas, o None.
+
+    Compara lower() de la columna, no solo el correo normalizado: asi tambien
+    encuentra a los usuarios que se guardaron con mayusculas antes de esta regla.
+    """
+    return session.exec(
+        select(User).where(func.lower(User.email) == normalize_email(email))
+    ).first()
+
+
 def create_company_with_owner(
     session: Session, company_name: str, owner_name: str, email: str, password: str
 ) -> None:
     """Crea la empresa, su usuario propietario y sus catalogos por defecto. Lo usa el comando de consola."""
-    if session.exec(select(User).where(User.email == email)).first():
+    email = normalize_email(email)
+    if get_user_by_email(session, email):
         raise AlreadyExistsError("Usuario", "email", email)
 
     company = Company(nombre=company_name)
@@ -22,6 +40,17 @@ def create_company_with_owner(
 
     session.add(UserCompany(usuario_id=user.id, empresa_id=company.id, rol="propietario"))
     taxes_service.seed_default_taxes(session, company.id)
+    session.commit()
+
+
+def reset_password(session: Session, email: str, new_password: str) -> None:
+    """Le pone una password nueva a un usuario. Lo usa el comando de consola."""
+    user = get_user_by_email(session, email)
+    if not user:
+        raise NotFoundError("Usuario", email)
+
+    user.password_hash = password_hash.hash(new_password)
+    session.add(user)
     session.commit()
 
 

@@ -12,6 +12,14 @@ def test_login_with_correct_credentials_sets_cookies_and_returns_200(client, own
     assert "refresh_token_cookie" in response.cookies
 
 
+def test_login_ignores_email_case(client, owner):
+    response = client.post(
+        "/api/v1/auth/login", json={"email": EMAIL.upper(), "password": PASSWORD}
+    )
+
+    assert response.status_code == 200
+
+
 def test_login_with_wrong_password_returns_401_generic_message(client, owner):
     response = client.post("/api/v1/auth/login", json={"email": EMAIL, "password": "otra-clave"})
 
