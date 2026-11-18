@@ -43,7 +43,7 @@ it("muestra la lista de productos con sus existencias", async () => {
   // Costo y precio en COP sin decimales; existencias sin decimal cuando es entero
   expect(screen.getByText(/^2\.000\sCOP$/)).toBeInTheDocument();
   expect(screen.getByText(/^3\.500\sCOP$/)).toBeInTheDocument();
-  expect(screen.getByText("10")).toBeInTheDocument();
+  expect(screen.getByRole("cell", { name: "10" })).toBeInTheDocument();
 });
 
 it("registra un producto y aparece en la lista", async () => {
@@ -440,4 +440,145 @@ it("si falla la actualización, el carrito sigue con sus líneas y muestra el er
     await within(dialog).findByText("La cantidad a agregar debe ser mayor a cero"),
   ).toBeInTheDocument();
   expect(within(dialog).getByRole("cell", { name: "Harina de trigo" })).toBeInTheDocument();
+});
+
+// 23 productos para probar la paginacion: "Producto 01" ... "Producto 23"
+const VEINTITRES = Array.from({ length: 23 }, (_, index) => ({
+  ...HARINA,
+  id: index + 1,
+  codigo: `P-${String(index + 1).padStart(4, "0")}`,
+  nombre: `Producto ${String(index + 1).padStart(2, "0")}`,
+}));
+
+function mockItems(items: unknown[]) {
+  server.use(
+    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
+    http.get(ITEMS_URL, () => HttpResponse.json(items)),
+  );
+}
+
+it("muestra solo los primeros 10 productos al cargar", async () => {
+  mockItems(VEINTITRES);
+
+  renderPage();
+
+  expect(await screen.findByText("Producto 01")).toBeInTheDocument();
+  expect(screen.getByText("Producto 10")).toBeInTheDocument();
+  expect(screen.queryByText("Producto 11")).not.toBeInTheDocument();
+  expect(screen.getByText("Mostrando 1–10 de 23")).toBeInTheDocument();
+});
+
+it("pasa a la siguiente página con el botón de página siguiente", async () => {
+  mockItems(VEINTITRES);
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("Producto 01");
+  await user.click(screen.getByRole("button", { name: /página siguiente/i }));
+
+  expect(await screen.findByText("Producto 11")).toBeInTheDocument();
+  expect(screen.queryByText("Producto 01")).not.toBeInTheDocument();
+  expect(screen.getByText("Mostrando 11–20 de 23")).toBeInTheDocument();
+});
+
+it("permite ver 50 por página y solo ofrece 10 y 50", async () => {
+  mockItems(VEINTITRES);
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("Producto 01");
+  const selector = screen.getByRole("combobox", { name: /productos por página/i });
+  expect(within(selector).getAllByRole("option").map((option) => option.textContent)).toEqual([
+    "10",
+    "50",
+  ]);
+  await user.selectOptions(selector, "50");
+
+  expect(screen.getByText("Producto 23")).toBeInTheDocument();
+  expect(screen.getByText("Mostrando 1–23 de 23")).toBeInTheDocument();
+});
+
+// Para los filtros: los pares son productos que se venden, los impares solo son insumos.
+const MEZCLADOS = Array.from({ length: 30 }, (_, index) => {
+  const seVende = index % 2 === 0;
+  return {
+    ...HARINA,
+    id: index + 1,
+    nombre: seVende ? `Vendible ${index + 1}` : `Insumo ${index + 1}`,
+    se_vende: seVende,
+    es_insumo: !seVende,
+  };
+});
+
+it("filtra por uso y pagina sobre los filtrados", async () => {
+  mockItems(MEZCLADOS);
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("Vendible 1");
+  await user.selectOptions(screen.getByLabelText(/filtrar por uso/i), "es_insumo");
+
+  expect(screen.getByText("Insumo 2")).toBeInTheDocument();
+  expect(screen.queryByText("Vendible 1")).not.toBeInTheDocument();
+  expect(screen.getByText("Mostrando 1–10 de 15")).toBeInTheDocument();
+});
+
+it("al filtrar vuelve a la primera página", async () => {
+  mockItems(MEZCLADOS);
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("Vendible 1");
+  await user.click(screen.getByRole("button", { name: "Página 3" }));
+  await user.selectOptions(screen.getByLabelText(/filtrar por uso/i), "se_vende");
+
+  expect(screen.getByText("Vendible 1")).toBeInTheDocument();
+  expect(screen.getByText("Mostrando 1–10 de 15")).toBeInTheDocument();
+});
+
+it("un producto que se vende y es insumo sale en los dos filtros", async () => {
+  mockItems([
+    { ...HARINA, id: 1, nombre: "Solo venta", se_vende: true, es_insumo: false },
+    { ...HARINA, id: 2, nombre: "Solo insumo", se_vende: false, es_insumo: true },
+    { ...HARINA, id: 3, nombre: "Los dos", se_vende: true, es_insumo: true },
+  ]);
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("Solo venta");
+  await user.selectOptions(screen.getByLabelText(/filtrar por uso/i), "se_vende");
+  expect(screen.getByText("Solo venta")).toBeInTheDocument();
+  expect(screen.getByText("Los dos")).toBeInTheDocument();
+  expect(screen.queryByText("Solo insumo")).not.toBeInTheDocument();
+
+  await user.selectOptions(screen.getByLabelText(/filtrar por uso/i), "es_insumo");
+  expect(screen.getByText("Solo insumo")).toBeInTheDocument();
+  expect(screen.getByText("Los dos")).toBeInTheDocument();
+  expect(screen.queryByText("Solo venta")).not.toBeInTheDocument();
+});
+
+it("busca por nombre sin importar mayúsculas ni tildes", async () => {
+  mockItems([
+    { ...HARINA, id: 1, nombre: "Azúcar" },
+    { ...HARINA, id: 2, nombre: "Harina" },
+  ]);
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("Azúcar");
+  await user.type(screen.getByLabelText(/buscar producto/i), "AZUCAR");
+
+  expect(screen.getByText("Azúcar")).toBeInTheDocument();
+  expect(screen.queryByText("Harina")).not.toBeInTheDocument();
+});
+
+it("avisa cuando ningún producto coincide con el filtro", async () => {
+  mockItems([HARINA]);
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("Harina de trigo");
+  await user.type(screen.getByLabelText(/buscar producto/i), "zzz");
+
+  expect(screen.getByText(/ningún producto coincide con el filtro/i)).toBeInTheDocument();
 });
