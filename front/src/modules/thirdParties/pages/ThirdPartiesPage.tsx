@@ -2,9 +2,10 @@ import { Button, Center, Dialog, Drawer, Heading, HStack, Spinner, Stack, Text }
 import { isAxiosError } from "axios";
 import { useState } from "react";
 
+import { TablePagination } from "../../../shared/components/ui/TablePagination";
+import { normalizeText } from "../../../shared/lib/normalizeText";
 import { ThirdPartyFilters, type TypeFilter } from "../components/ThirdPartyFilters";
 import { ThirdPartyForm } from "../components/ThirdPartyForm";
-import { ThirdPartyPagination } from "../components/ThirdPartyPagination";
 import { ThirdPartyTable } from "../components/ThirdPartyTable";
 import { useBanks } from "../hooks/useBanks";
 import { useCreateThirdParty } from "../hooks/useCreateThirdParty";
@@ -25,18 +26,13 @@ function getErrorMessage(isError: boolean, error: unknown, errorGenerico = ERROR
     : errorGenerico;
 }
 
-// "Pérez" → "perez": asi "perez", "PEREZ" y "Pérez" se encuentran entre si.
-function normalize(text: string) {
-  return text.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
-}
-
 function filterThirdParties(thirdParties: ThirdParty[], name: string, type: TypeFilter) {
-  const search = normalize(name);
+  const search = normalizeText(name);
   return thirdParties.filter((thirdParty) => {
     // Un tercero "ambos" es cliente y proveedor a la vez: sale en los dos filtros.
     const matchesType =
       type === "todos" || thirdParty.tipo === type || thirdParty.tipo === "ambos";
-    const matchesName = normalize(thirdParty.nombre).includes(search);
+    const matchesName = normalizeText(thirdParty.nombre).includes(search);
     return matchesType && matchesName;
   });
 }
@@ -158,7 +154,8 @@ export function ThirdPartiesPage() {
                 onToggleActive={handleToggleActive}
                 onDelete={setDeletingThirdParty}
               />
-              <ThirdPartyPagination
+              <TablePagination
+                itemsPerPageLabel="Terceros por página"
                 count={total}
                 page={currentPage}
                 pageSize={pageSize}

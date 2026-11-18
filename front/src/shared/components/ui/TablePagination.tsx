@@ -5,14 +5,22 @@ import { LuChevronLeft, LuChevronRight } from "react-icons/lu";
 const PAGE_SIZES = [10, 50];
 
 type Props = {
-  count: number; // total de terceros, no de paginas
+  count: number; // total de filas, no de paginas
   page: number; // empieza en 1
   pageSize: number;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
+  itemsPerPageLabel: string; // → "Terceros por página" (lo lee el lector de pantalla)
 };
 
-export function ThirdPartyPagination({ count, page, pageSize, onPageChange, onPageSizeChange }: Props) {
+export function TablePagination({
+  count,
+  page,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+  itemsPerPageLabel,
+}: Props) {
   // → "Mostrando 11–20 de 23"
   const desde = (page - 1) * pageSize + 1;
   const hasta = Math.min(page * pageSize, count);
@@ -25,7 +33,7 @@ export function ThirdPartyPagination({ count, page, pageSize, onPageChange, onPa
         </Text>
         <NativeSelect.Root size="sm" width="auto">
           <NativeSelect.Field
-            aria-label="Terceros por página"
+            aria-label={itemsPerPageLabel}
             value={pageSize}
             onChange={(event) => onPageSizeChange(Number(event.target.value))}
           >
