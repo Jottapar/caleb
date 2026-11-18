@@ -22,15 +22,14 @@ export function ItemForm({
 }: Props) {
   const taxes = useTaxes();
   const [nombre, setNombre] = useState(initialValues?.nombre ?? "");
-  const [codigo, setCodigo] = useState("");
+  const [codigo, setCodigo] = useState(initialValues?.codigo ?? "");
   const [costo, setCosto] = useState(initialValues?.costo ?? "");
   const [precioVenta, setPrecioVenta] = useState(initialValues?.precio_venta ?? "");
   const [cantidadInicial, setCantidadInicial] = useState("");
   const [impuestoId, setImpuestoId] = useState(initialValues?.impuesto_id.toString() ?? "");
-  // Solo se piden al crear. Por defecto un producto nuevo se vende y no es insumo,
-  // igual que los defaults del backend.
-  const [seVende, setSeVende] = useState(true);
-  const [esInsumo, setEsInsumo] = useState(false);
+  // Al crear, por defecto un producto se vende y no es insumo (igual que los defaults del backend).
+  const [seVende, setSeVende] = useState(initialValues?.se_vende ?? true);
+  const [esInsumo, setEsInsumo] = useState(initialValues?.es_insumo ?? false);
 
   const impuestoSeleccionado = impuestoId || taxes.data?.[0]?.id.toString() || "";
 
@@ -39,9 +38,12 @@ export function ItemForm({
     if (initialValues) {
       onSubmit({
         nombre,
+        codigo,
         costo,
         precio_venta: precioVenta,
         impuesto_id: Number(impuestoSeleccionado),
+        se_vende: seVende,
+        es_insumo: esInsumo,
       });
       return;
     }
@@ -64,12 +66,10 @@ export function ItemForm({
         <Input value={nombre} onChange={(event) => setNombre(event.target.value)} />
       </Field.Root>
 
-      {!initialValues && (
-        <Field.Root>
-          <Field.Label>Código</Field.Label>
-          <Input value={codigo} onChange={(event) => setCodigo(event.target.value)} />
-        </Field.Root>
-      )}
+      <Field.Root>
+        <Field.Label>Código</Field.Label>
+        <Input value={codigo} onChange={(event) => setCodigo(event.target.value)} />
+      </Field.Root>
 
       <Field.Root>
         <Field.Label>Costo</Field.Label>
@@ -107,20 +107,18 @@ export function ItemForm({
         </NativeSelect.Root>
       </Field.Root>
 
-      {!initialValues && (
-        <Stack gap="2">
-          <Checkbox.Root checked={seVende} onCheckedChange={(e) => setSeVende(e.checked === true)}>
-            <Checkbox.HiddenInput />
-            <Checkbox.Control />
-            <Checkbox.Label>Se vende</Checkbox.Label>
-          </Checkbox.Root>
-          <Checkbox.Root checked={esInsumo} onCheckedChange={(e) => setEsInsumo(e.checked === true)}>
-            <Checkbox.HiddenInput />
-            <Checkbox.Control />
-            <Checkbox.Label>Es insumo</Checkbox.Label>
-          </Checkbox.Root>
-        </Stack>
-      )}
+      <Stack gap="2">
+        <Checkbox.Root checked={seVende} onCheckedChange={(e) => setSeVende(e.checked === true)}>
+          <Checkbox.HiddenInput />
+          <Checkbox.Control />
+          <Checkbox.Label>Se vende</Checkbox.Label>
+        </Checkbox.Root>
+        <Checkbox.Root checked={esInsumo} onCheckedChange={(e) => setEsInsumo(e.checked === true)}>
+          <Checkbox.HiddenInput />
+          <Checkbox.Control />
+          <Checkbox.Label>Es insumo</Checkbox.Label>
+        </Checkbox.Root>
+      </Stack>
 
       {errorMessage && <Text color="fg.error">{errorMessage}</Text>}
 

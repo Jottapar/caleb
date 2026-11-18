@@ -26,9 +26,12 @@ export type ItemCreate = {
 
 export type ItemUpdate = {
   nombre?: string;
+  codigo?: string;
   costo?: string;
   precio_venta?: string;
   impuesto_id?: number;
+  se_vende?: boolean;
+  es_insumo?: boolean;
   activo?: boolean;
 };
 

@@ -518,3 +518,93 @@ def test_update_item_rejects_empty_name(logged_in_client, session):
 
     assert response.status_code == 422
     assert response.json()["error"] == "business_error"
+
+
+def _create_item(logged_in_client, session, **extra):
+    response = logged_in_client.post(
+        URL,
+        json={"impuesto_id": _sin_impuesto_id(session), **extra},
+        headers=_csrf_headers(logged_in_client),
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
+def test_update_item_can_change_code(logged_in_client, session):
+    created = _create_item(logged_in_client, session, nombre="Harina", codigo="HAR-001")
+
+    response = logged_in_client.patch(
+        f"{URL}/{created['id']}",
+        json={"codigo": "HAR-002"},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["codigo"] == "HAR-002"
+
+
+def test_update_item_keeping_its_own_code_is_not_a_duplicate(logged_in_client, session):
+    created = _create_item(logged_in_client, session, nombre="Harina", codigo="HAR-001")
+
+    response = logged_in_client.patch(
+        f"{URL}/{created['id']}",
+        json={"nombre": "Harina de trigo", "codigo": "HAR-001"},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 200
+
+
+def test_update_item_rejects_code_used_by_another_item(logged_in_client, session):
+    _create_item(logged_in_client, session, nombre="Harina", codigo="HAR-001")
+    azucar = _create_item(logged_in_client, session, nombre="Azucar", codigo="AZU-001")
+
+    response = logged_in_client.patch(
+        f"{URL}/{azucar['id']}",
+        json={"codigo": "HAR-001"},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "business_error"
+
+
+def test_update_item_rejects_empty_code(logged_in_client, session):
+    created = _create_item(logged_in_client, session, nombre="Harina", codigo="HAR-001")
+
+    response = logged_in_client.patch(
+        f"{URL}/{created['id']}",
+        json={"codigo": "   "},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "business_error"
+
+
+def test_update_item_can_change_se_vende_and_es_insumo(logged_in_client, session):
+    created = _create_item(logged_in_client, session, nombre="Harina")
+
+    response = logged_in_client.patch(
+        f"{URL}/{created['id']}",
+        json={"se_vende": False, "es_insumo": True},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["se_vende"] is False
+    assert response.json()["es_insumo"] is True
+
+
+def test_update_item_rejects_leaving_both_marks_false(logged_in_client, session):
+    # El producto nace con se_vende=true y es_insumo=false: apagar solo se_vende deja los dos en falso
+    created = _create_item(logged_in_client, session, nombre="Harina")
+
+    response = logged_in_client.patch(
+        f"{URL}/{created['id']}",
+        json={"se_vende": False},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "business_error"

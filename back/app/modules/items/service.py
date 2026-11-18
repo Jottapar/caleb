@@ -29,10 +29,14 @@ def _generate_code(session: Session, empresa_id: int) -> str:
     return f"P-{len(total) + 1:04d}"
 
 
-def _validate_code(session: Session, codigo: str, empresa_id: int) -> None:
-    existing = session.exec(
-        select(Item).where(Item.codigo == codigo, Item.empresa_id == empresa_id)
-    ).first()
+def _validate_code(
+    session: Session, codigo: str, empresa_id: int, excluding_item_id: int | None = None
+) -> None:
+    # Al editar, el producto no cuenta contra si mismo: dejar su mismo codigo no es un duplicado.
+    query = select(Item).where(Item.codigo == codigo, Item.empresa_id == empresa_id)
+    if excluding_item_id is not None:
+        query = query.where(Item.id != excluding_item_id)
+    existing = session.exec(query).first()
     if existing:
         raise BusinessError(f"Ya existe un producto con el codigo {codigo}")
 
@@ -121,7 +125,18 @@ def get_by_id(session: Session, item_id: int, empresa_id: int) -> Item:
 def update_item(session: Session, item_id: int, data: ItemUpdate, empresa_id: int) -> ItemRead:
     item = get_by_id(session, item_id, empresa_id)
     cambios = data.model_dump(exclude_unset=True)
-    _validate_item(cambios.get("nombre", item.nombre), item.se_vende, item.es_insumo)
+    # Se valida con los valores que quedarian despues del cambio: lo enviado, o lo que ya tenia.
+    _validate_item(
+        cambios.get("nombre", item.nombre),
+        cambios.get("se_vende", item.se_vende),
+        cambios.get("es_insumo", item.es_insumo),
+    )
+    if "codigo" in cambios:
+        codigo = cambios["codigo"].strip()
+        if not codigo:
+            raise BusinessError("El codigo del producto es obligatorio")
+        _validate_code(session, codigo, empresa_id, excluding_item_id=item.id)
+        cambios["codigo"] = codigo
     if "impuesto_id" in cambios:
         _validate_tax(session, cambios["impuesto_id"], empresa_id)
 

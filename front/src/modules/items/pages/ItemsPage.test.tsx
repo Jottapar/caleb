@@ -582,3 +582,75 @@ it("avisa cuando ningún producto coincide con el filtro", async () => {
 
   expect(screen.getByText(/ningún producto coincide con el filtro/i)).toBeInTheDocument();
 });
+
+it("el drawer de editar muestra código, impuesto y las marcas del producto, y no la cantidad inicial", async () => {
+  mockItems([{ ...HARINA, se_vende: false, es_insumo: true }]);
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: /editar/i }));
+  const drawer = await screen.findByRole("dialog");
+
+  expect(within(drawer).getByDisplayValue("HAR-001")).toBeInTheDocument();
+  expect(within(drawer).getByRole("checkbox", { name: "Se vende" })).not.toBeChecked();
+  expect(within(drawer).getByRole("checkbox", { name: "Es insumo" })).toBeChecked();
+  expect(within(drawer).queryByLabelText(/cantidad inicial/i)).not.toBeInTheDocument();
+});
+
+it("al guardar la edición envía código y marcas, y la tabla se actualiza", async () => {
+  let producto = { ...HARINA };
+  let enviado: Record<string, unknown> = {};
+  server.use(
+    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
+    http.get(ITEMS_URL, () => HttpResponse.json([producto])),
+    http.patch(`${ITEMS_URL}/:id`, async ({ request }) => {
+      enviado = (await request.json()) as Record<string, unknown>;
+      producto = { ...producto, ...enviado };
+      return HttpResponse.json(producto);
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: /editar/i }));
+  const drawer = await screen.findByRole("dialog");
+  const codigo = within(drawer).getByDisplayValue("HAR-001");
+  await user.clear(codigo);
+  await user.type(codigo, "HAR-002");
+  await user.click(within(drawer).getByText("Es insumo"));
+  await user.click(within(drawer).getByRole("button", { name: /guardar/i }));
+
+  expect(await screen.findByText("HAR-002")).toBeInTheDocument();
+  expect(enviado).toMatchObject({
+    codigo: "HAR-002",
+    se_vende: true,
+    es_insumo: true,
+  });
+});
+
+it("muestra en el drawer el error del backend si el código ya existe", async () => {
+  server.use(
+    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
+    http.get(ITEMS_URL, () => HttpResponse.json([HARINA])),
+    http.patch(`${ITEMS_URL}/:id`, () =>
+      HttpResponse.json(
+        {
+          error: "business_error",
+          message: "Ya existe un producto con el codigo AZU-001",
+        },
+        { status: 422 },
+      ),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: /editar/i }));
+  const drawer = await screen.findByRole("dialog");
+  await user.click(within(drawer).getByRole("button", { name: /guardar/i }));
+
+  expect(
+    await within(drawer).findByText("Ya existe un producto con el codigo AZU-001"),
+  ).toBeInTheDocument();
+  expect(within(drawer).getByDisplayValue("Harina de trigo")).toBeInTheDocument();
+});

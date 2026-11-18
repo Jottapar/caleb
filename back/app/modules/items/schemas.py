@@ -17,9 +17,12 @@ class ItemCreate(SQLModel):
 
 class ItemUpdate(SQLModel):
     nombre: str | None = None
+    codigo: str | None = None
     costo: Decimal | None = None
     precio_venta: Decimal | None = None
     impuesto_id: int | None = None
+    se_vende: bool | None = None
+    es_insumo: bool | None = None
     activo: bool | None = None
 
 
