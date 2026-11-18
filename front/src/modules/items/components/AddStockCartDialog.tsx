@@ -1,6 +1,7 @@
 import { Button, Dialog, Field, HStack, Input, NativeSelect, Stack, Table, Text } from "@chakra-ui/react";
 import { useState } from "react";
 
+import { sanitizeDecimal } from "../formatters";
 import type { Item, StockCartLine } from "../types";
 
 type Props = {
@@ -64,7 +65,11 @@ export function AddStockCartDialog({
 
               <Field.Root required>
                 <Field.Label>Cantidad</Field.Label>
-                <Input value={cantidad} onChange={(event) => setCantidad(event.target.value)} />
+                <Input
+                  inputMode="decimal"
+                  value={cantidad}
+                  onChange={(event) => setCantidad(sanitizeDecimal(event.target.value))}
+                />
               </Field.Root>
 
               <HStack>

@@ -16,3 +16,10 @@ export function formatCop(value: string) {
 export function formatStock(value: string) {
   return stockFormat.format(Number(value));
 }
+
+// Deja pasar solo digitos y un unico punto decimal, para que los inputs de cantidad, costo y precio no acepten letras.
+// "1a2.5.3" → "12.53"
+export function sanitizeDecimal(value: string) {
+  const [entero, ...decimales] = value.replace(/[^0-9.]/g, "").split(".");
+  return decimales.length > 0 ? `${entero}.${decimales.join("")}` : entero;
+}

@@ -654,3 +654,35 @@ it("muestra en el drawer el error del backend si el código ya existe", async ()
   ).toBeInTheDocument();
   expect(within(drawer).getByDisplayValue("Harina de trigo")).toBeInTheDocument();
 });
+
+it("la cantidad al agregar existencias no deja escribir letras ni un segundo punto", async () => {
+  mockItems([HARINA]);
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Agregar existencias" }));
+  const dialog = await screen.findByRole("dialog");
+  const cantidad = within(dialog).getByLabelText(/cantidad/i);
+  await user.type(cantidad, "1a2b.5.3");
+
+  expect(cantidad).toHaveValue("12.53");
+});
+
+it("costo, precio y cantidad inicial al crear no dejan escribir letras", async () => {
+  mockItems([]);
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Crear producto" }));
+  const dialog = await screen.findByRole("dialog");
+  const costo = within(dialog).getByLabelText(/costo/i);
+  const precio = within(dialog).getByLabelText(/precio de venta/i);
+  const cantidad = within(dialog).getByLabelText(/cantidad inicial/i);
+  await user.type(costo, "2a000");
+  await user.type(precio, "3,500");
+  await user.type(cantidad, "x5");
+
+  expect(costo).toHaveValue("2000");
+  expect(precio).toHaveValue("3500");
+  expect(cantidad).toHaveValue("5");
+});

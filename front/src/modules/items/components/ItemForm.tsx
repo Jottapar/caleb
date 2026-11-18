@@ -2,6 +2,7 @@ import { Button, Checkbox, Field, HStack, Input, NativeSelect, Stack, Text } fro
 import { useState } from "react";
 
 import { useTaxes } from "../../taxes/hooks/useTaxes";
+import { sanitizeDecimal } from "../formatters";
 import type { Item, ItemCreate, ItemUpdate } from "../types";
 
 type Props = (
@@ -73,20 +74,29 @@ export function ItemForm({
 
       <Field.Root>
         <Field.Label>Costo</Field.Label>
-        <Input value={costo} onChange={(event) => setCosto(event.target.value)} />
+        <Input
+          inputMode="decimal"
+          value={costo}
+          onChange={(event) => setCosto(sanitizeDecimal(event.target.value))}
+        />
       </Field.Root>
 
       <Field.Root>
         <Field.Label>Precio de venta</Field.Label>
-        <Input value={precioVenta} onChange={(event) => setPrecioVenta(event.target.value)} />
+        <Input
+          inputMode="decimal"
+          value={precioVenta}
+          onChange={(event) => setPrecioVenta(sanitizeDecimal(event.target.value))}
+        />
       </Field.Root>
 
       {!initialValues && (
         <Field.Root>
           <Field.Label>Cantidad inicial</Field.Label>
           <Input
+            inputMode="decimal"
             value={cantidadInicial}
-            onChange={(event) => setCantidadInicial(event.target.value)}
+            onChange={(event) => setCantidadInicial(sanitizeDecimal(event.target.value))}
           />
         </Field.Root>
       )}
