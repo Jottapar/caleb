@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
+import { beforeEach } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 
@@ -8,6 +9,13 @@ import { ItemsPage } from "./ItemsPage";
 
 const ITEMS_URL = "/api/v1/items";
 const TAXES_URL = "/api/v1/taxes";
+const SERVICES_URL = "/api/v1/services";
+
+// La pagina tambien pide los servicios. Por defecto no hay ninguno; un test que los
+// necesite declara su propio handler con server.use, que tiene prioridad sobre este.
+beforeEach(() => {
+  server.use(http.get(SERVICES_URL, () => HttpResponse.json([])));
+});
 
 const SIN_IMPUESTO = { id: 1, nombre: "Sin impuesto", porcentaje: "0.00", activo: true };
 
@@ -685,4 +693,209 @@ it("costo, precio y cantidad inicial al crear no dejan escribir letras", async (
   expect(costo).toHaveValue("2000");
   expect(precio).toHaveValue("3500");
   expect(cantidad).toHaveValue("5");
+});
+
+// Shampoo es insumo; Gel tambien se vende; Pan solo se vende (no puede ir en una ficha)
+const SHAMPOO = {
+  ...HARINA,
+  id: 10,
+  codigo: "P-0010",
+  nombre: "Shampoo",
+  costo: "1000.00",
+  se_vende: false,
+  es_insumo: true,
+};
+const GEL = {
+  ...HARINA,
+  id: 11,
+  codigo: "P-0011",
+  nombre: "Gel",
+  costo: "500.00",
+  se_vende: true,
+  es_insumo: true,
+};
+const PAN = {
+  ...HARINA,
+  id: 12,
+  codigo: "P-0012",
+  nombre: "Pan",
+  costo: "300.00",
+  se_vende: true,
+  es_insumo: false,
+};
+
+const CORTE = {
+  id: 1,
+  codigo: "S-0001",
+  nombre: "Corte de pelo",
+  precio_venta: "25000.00",
+  impuesto_id: 1,
+  activo: true,
+  costo: "2500.00",
+  insumos: [],
+};
+
+it("muestra los servicios en la tabla de productos con su costo y sin existencias", async () => {
+  server.use(
+    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
+    http.get(ITEMS_URL, () => HttpResponse.json([HARINA])),
+    http.get(SERVICES_URL, () => HttpResponse.json([CORTE])),
+  );
+
+  renderPage();
+
+  const fila = (await screen.findByText("Corte de pelo")).closest("tr") as HTMLElement;
+  expect(within(fila).getByText("S-0001")).toBeInTheDocument();
+  expect(within(fila).getByText(/^2\.500\sCOP$/)).toBeInTheDocument();
+  expect(within(fila).getByText(/^25\.000\sCOP$/)).toBeInTheDocument();
+  expect(within(fila).getByText("—")).toBeInTheDocument();
+});
+
+it("el filtro Servicios muestra solo los servicios", async () => {
+  server.use(
+    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
+    http.get(ITEMS_URL, () => HttpResponse.json([HARINA])),
+    http.get(SERVICES_URL, () => HttpResponse.json([CORTE])),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("Corte de pelo");
+  await user.selectOptions(screen.getByLabelText(/filtrar por uso/i), "servicios");
+
+  expect(screen.getByText("Corte de pelo")).toBeInTheDocument();
+  expect(screen.queryByText("Harina de trigo")).not.toBeInTheDocument();
+});
+
+it("la ficha técnica solo ofrece productos marcados como insumo", async () => {
+  mockItems([SHAMPOO, GEL, PAN]);
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Crear servicio o ficha técnica",
+    }),
+  );
+  const dialog = await screen.findByRole("dialog");
+  const opciones = within(within(dialog).getByLabelText("Insumo"))
+    .getAllByRole("option")
+    .map((option) => option.textContent);
+
+  expect(opciones).toEqual(["Shampoo", "Gel"]);
+});
+
+it("crea un servicio con sus insumos, muestra el costo y aparece en la tabla", async () => {
+  let servicios: unknown[] = [];
+  let enviado: Record<string, unknown> = {};
+  server.use(
+    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
+    http.get(ITEMS_URL, () => HttpResponse.json([SHAMPOO, GEL])),
+    http.get(SERVICES_URL, () => HttpResponse.json(servicios)),
+    http.post(SERVICES_URL, async ({ request }) => {
+      enviado = (await request.json()) as Record<string, unknown>;
+      const creado = { ...CORTE, nombre: enviado.nombre };
+      servicios = [creado];
+      return HttpResponse.json(creado, { status: 201 });
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Crear servicio o ficha técnica",
+    }),
+  );
+  const dialog = await screen.findByRole("dialog");
+  await within(dialog).findByRole("option", { name: "Sin impuesto" });
+  await user.type(within(dialog).getByLabelText(/nombre/i), "Corte de pelo");
+  await user.type(within(dialog).getByLabelText(/precio de venta/i), "25000");
+  await user.selectOptions(within(dialog).getByLabelText("Insumo"), "10");
+  await user.type(within(dialog).getByLabelText("Cantidad"), "2");
+  await user.click(within(dialog).getByRole("button", { name: "Agregar insumo" }));
+  await user.selectOptions(within(dialog).getByLabelText("Insumo"), "11");
+  await user.type(within(dialog).getByLabelText("Cantidad"), "1");
+  await user.click(within(dialog).getByRole("button", { name: "Agregar insumo" }));
+
+  // 2 x 1.000 + 1 x 500
+  expect(within(dialog).getByText(/costo del servicio: 2\.500\sCOP/i)).toBeInTheDocument();
+
+  await user.click(within(dialog).getByRole("button", { name: "Crear servicio" }));
+
+  expect(await screen.findByText("Corte de pelo")).toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(enviado).toEqual({
+    nombre: "Corte de pelo",
+    precio_venta: "25000",
+    impuesto_id: 1,
+    insumos: [
+      { item_id: 10, cantidad: "2" },
+      { item_id: 11, cantidad: "1" },
+    ],
+  });
+});
+
+it("no deja crear el servicio sin insumos", async () => {
+  mockItems([SHAMPOO]);
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Crear servicio o ficha técnica",
+    }),
+  );
+  const dialog = await screen.findByRole("dialog");
+
+  expect(within(dialog).getByRole("button", { name: "Crear servicio" })).toBeDisabled();
+});
+
+it("avisa cuando no hay productos marcados como insumo", async () => {
+  mockItems([PAN]);
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Crear servicio o ficha técnica",
+    }),
+  );
+  const dialog = await screen.findByRole("dialog");
+
+  expect(within(dialog).getByText(/no tienes productos marcados como insumo/i)).toBeInTheDocument();
+});
+
+it("deja la ventana abierta y muestra el error si crear el servicio falla", async () => {
+  server.use(
+    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
+    http.get(ITEMS_URL, () => HttpResponse.json([SHAMPOO])),
+    http.post(SERVICES_URL, () =>
+      HttpResponse.json(
+        {
+          error: "business_error",
+          message: "El nombre del servicio es obligatorio",
+        },
+        { status: 422 },
+      ),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Crear servicio o ficha técnica",
+    }),
+  );
+  const dialog = await screen.findByRole("dialog");
+  await within(dialog).findByRole("option", { name: "Sin impuesto" });
+  await user.type(within(dialog).getByLabelText(/nombre/i), " ");
+  await user.type(within(dialog).getByLabelText("Cantidad"), "1");
+  await user.click(within(dialog).getByRole("button", { name: "Agregar insumo" }));
+  await user.click(within(dialog).getByRole("button", { name: "Crear servicio" }));
+
+  expect(
+    await within(dialog).findByText("El nombre del servicio es obligatorio"),
+  ).toBeInTheDocument();
 });

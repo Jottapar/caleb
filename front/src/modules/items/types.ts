@@ -1,3 +1,5 @@
+import type { Service } from "../services";
+
 // Tal como lo devuelve GET/POST /items (ItemRead en el backend)
 export type Item = {
   id: number;
@@ -40,3 +42,7 @@ export type StockCartLine = {
   nombre: string;
   cantidad: string;
 };
+
+// Una fila de la tabla de Productos: puede ser un producto o un servicio.
+// `kind` dice cual es, y TypeScript deja leer los campos de cada uno solo despues de revisarlo.
+export type ProductRow = { kind: "item"; item: Item } | { kind: "service"; service: Service };

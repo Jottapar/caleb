@@ -5,6 +5,7 @@ from app.modules.banks.router import router as banks_router
 from app.modules.health.router import router as health_router
 from app.modules.items.router import router as items_router
 from app.modules.receipts.router import router as receipts_router
+from app.modules.services.router import router as services_router
 from app.modules.taxes.router import router as taxes_router
 from app.modules.third_parties.router import router as third_parties_router
 
@@ -17,5 +18,6 @@ router.include_router(auth_router)
 router.include_router(third_parties_router)
 router.include_router(banks_router)
 router.include_router(items_router)
+router.include_router(services_router)
 router.include_router(taxes_router)
 router.include_router(receipts_router)

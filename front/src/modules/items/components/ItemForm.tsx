@@ -2,7 +2,7 @@ import { Button, Checkbox, Field, HStack, Input, NativeSelect, Stack, Text } fro
 import { useState } from "react";
 
 import { useTaxes } from "../../taxes/hooks/useTaxes";
-import { sanitizeDecimal } from "../formatters";
+import { sanitizeDecimal } from "../../../shared/lib/formatters";
 import type { Item, ItemCreate, ItemUpdate } from "../types";
 
 type Props = (

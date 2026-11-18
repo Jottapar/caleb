@@ -1,7 +1,7 @@
 import { Button, Dialog, Field, HStack, Input, NativeSelect, Stack, Table, Text } from "@chakra-ui/react";
 import { useState } from "react";
 
-import { sanitizeDecimal } from "../formatters";
+import { sanitizeDecimal } from "../../../shared/lib/formatters";
 import type { Item, StockCartLine } from "../types";
 
 type Props = {

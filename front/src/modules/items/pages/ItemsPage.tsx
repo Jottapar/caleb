@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { TablePagination } from "../../../shared/components/ui/TablePagination";
 import { normalizeText } from "../../../shared/lib/normalizeText";
+import { CreateServiceDialog, type ServiceCreate, useCreateService, useServices } from "../../services";
 import { AddStockCartDialog } from "../components/AddStockCartDialog";
 import { ItemFilters, type UseFilter } from "../components/ItemFilters";
 import { ItemForm } from "../components/ItemForm";
@@ -13,11 +14,12 @@ import { useCreateItem } from "../hooks/useCreateItem";
 import { useDeleteItem } from "../hooks/useDeleteItem";
 import { useItems } from "../hooks/useItems";
 import { useUpdateItem } from "../hooks/useUpdateItem";
-import type { Item, ItemCreate, ItemUpdate, StockCartLine } from "../types";
+import type { Item, ItemCreate, ItemUpdate, ProductRow, StockCartLine } from "../types";
 
 const ERROR_GENERICO_GUARDAR = "No se pudo guardar el producto. Intenta de nuevo.";
 const ERROR_GENERICO_ELIMINAR = "No se pudo eliminar el producto. Intenta de nuevo.";
 const ERROR_GENERICO_AGREGAR = "No se pudo actualizar las existencias. Intenta de nuevo.";
+const ERROR_GENERICO_SERVICIO = "No se pudo crear el servicio. Intenta de nuevo.";
 
 function getErrorMessage(isError: boolean, error: unknown, errorGenerico = ERROR_GENERICO_GUARDAR) {
   if (!isError) {
@@ -28,23 +30,36 @@ function getErrorMessage(isError: boolean, error: unknown, errorGenerico = ERROR
     : errorGenerico;
 }
 
-function filterItems(items: Item[], name: string, use: UseFilter) {
+function matchesUse(row: ProductRow, use: UseFilter) {
+  if (use === "todos") {
+    return true;
+  }
+  // Un servicio siempre se vende y nunca es insumo.
+  if (row.kind === "service") {
+    return use === "servicios" || use === "se_vende";
+  }
+  // Un producto puede venderse y ser insumo a la vez: sale en los dos filtros.
+  return use !== "servicios" && row.item[use];
+}
+
+function filterRows(rows: ProductRow[], name: string, use: UseFilter) {
   const search = normalizeText(name);
-  return items.filter((item) => {
-    // Un producto puede venderse y ser insumo a la vez: sale en los dos filtros.
-    const matchesUse = use === "todos" || item[use];
-    const matchesName = normalizeText(item.nombre).includes(search);
-    return matchesUse && matchesName;
+  return rows.filter((row) => {
+    const nombre = row.kind === "item" ? row.item.nombre : row.service.nombre;
+    return matchesUse(row, use) && normalizeText(nombre).includes(search);
   });
 }
 
 export function ItemsPage() {
   const items = useItems();
+  const services = useServices();
+  const createService = useCreateService();
   const createItem = useCreateItem();
   const updateItem = useUpdateItem();
   const deleteItem = useDeleteItem();
   const addStockBulk = useAddStockBulk();
   const [creating, setCreating] = useState(false);
+  const [creatingService, setCreatingService] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [deletingItem, setDeletingItem] = useState<Item | null>(null);
   const [isAddStockDialogOpen, setIsAddStockDialogOpen] = useState(false);
@@ -54,10 +69,21 @@ export function ItemsPage() {
   const [nameFilter, setNameFilter] = useState("");
   const [useFilter, setUseFilter] = useState<UseFilter>("todos");
 
+  // Productos y servicios van en la misma tabla: primero los productos, despues los servicios.
+  const rows: ProductRow[] = [
+    ...(items.data ?? []).map((item): ProductRow => ({ kind: "item", item })),
+    ...(services.data ?? []).map((service): ProductRow => ({ kind: "service", service })),
+  ];
+  // Solo los productos activos marcados como insumo pueden entrar en una ficha tecnica.
+  const supplies = (items.data ?? []).filter((item) => item.es_insumo && item.activo);
+  const isPending = items.isPending || services.isPending;
+  const isError = items.isError || services.isError;
+  const hasData = Boolean(items.data && services.data);
+
   // La API devuelve todos los productos (los desplegables de Recibos los necesitan
   // completos). Primero se filtra y despues se pagina: la pagina se corta del
   // resultado filtrado, no de la lista completa.
-  const filtered = filterItems(items.data ?? [], nameFilter, useFilter);
+  const filtered = filterRows(rows, nameFilter, useFilter);
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   // Si al eliminar se vacia la ultima pagina, se muestra la anterior en vez de una vacia.
@@ -91,6 +117,15 @@ export function ItemsPage() {
     // Limpia el error de un intento anterior para que no aparezca al reabrir la ventana.
     createItem.reset();
     setCreating(true);
+  }
+
+  function handleOpenCreateService() {
+    createService.reset();
+    setCreatingService(true);
+  }
+
+  function handleCreateService(data: ServiceCreate) {
+    createService.mutate(data, { onSuccess: () => setCreatingService(false) });
   }
 
   // La ventana se cierra solo si el backend guardó: si falla, queda abierta con los
@@ -154,25 +189,28 @@ export function ItemsPage() {
           <Button variant="outline" onClick={() => setIsAddStockDialogOpen(true)}>
             Agregar existencias
           </Button>
+          <Button variant="outline" onClick={handleOpenCreateService}>
+            Crear servicio o ficha técnica
+          </Button>
           <Button colorPalette="brand" onClick={handleOpenCreate}>
             Crear producto
           </Button>
         </HStack>
       </HStack>
 
-      {items.isPending && (
+      {isPending && (
         <Center py="8">
           <Spinner />
         </Center>
       )}
 
-      {items.isError && <Text color="fg.error">No pudimos cargar tus productos. Intenta de nuevo.</Text>}
+      {isError && <Text color="fg.error">No pudimos cargar tus productos. Intenta de nuevo.</Text>}
 
-      {items.data && items.data.length === 0 && (
+      {hasData && rows.length === 0 && (
         <Text color="fg.muted">No tienes productos registrados todavía.</Text>
       )}
 
-      {items.data && items.data.length > 0 && (
+      {hasData && rows.length > 0 && (
         <>
           <ItemFilters
             name={nameFilter}
@@ -185,7 +223,7 @@ export function ItemsPage() {
           ) : (
             <>
               <ItemTable
-                items={pageItems}
+                rows={pageItems}
                 onEdit={setEditingItem}
                 onToggleActive={handleToggleActive}
                 onDelete={setDeletingItem}
@@ -291,6 +329,20 @@ export function ItemsPage() {
             </Dialog.Content>
           </Dialog.Positioner>
         </Dialog.Root>
+      )}
+
+      {creatingService && (
+        <CreateServiceDialog
+          supplies={supplies}
+          onSubmit={handleCreateService}
+          onClose={() => setCreatingService(false)}
+          isSubmitting={createService.isPending}
+          errorMessage={getErrorMessage(
+            createService.isError,
+            createService.error,
+            ERROR_GENERICO_SERVICIO,
+          )}
+        />
       )}
 
       {isAddStockDialogOpen && items.data && (
