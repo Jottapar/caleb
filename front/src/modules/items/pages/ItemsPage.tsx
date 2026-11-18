@@ -31,6 +31,7 @@ export function ItemsPage() {
   const updateItem = useUpdateItem();
   const deleteItem = useDeleteItem();
   const addStockBulk = useAddStockBulk();
+  const [creating, setCreating] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [deletingItem, setDeletingItem] = useState<Item | null>(null);
   const [isAddStockDialogOpen, setIsAddStockDialogOpen] = useState(false);
@@ -41,8 +42,16 @@ export function ItemsPage() {
     ERROR_GENERICO_ELIMINAR,
   );
 
+  function handleOpenCreate() {
+    // Limpia el error de un intento anterior para que no aparezca al reabrir la ventana.
+    createItem.reset();
+    setCreating(true);
+  }
+
+  // La ventana se cierra solo si el backend guardó: si falla, queda abierta con los
+  // datos escritos y el error a la vista para que el usuario corrija.
   function handleCreate(data: ItemCreate) {
-    createItem.mutate(data);
+    createItem.mutate(data, { onSuccess: () => setCreating(false) });
   }
 
   function handleToggleActive(item: Item, activo: boolean) {
@@ -94,18 +103,17 @@ export function ItemsPage() {
 
   return (
     <Stack gap="6">
-      <Heading size="xl">Productos y existencias</Heading>
-
-      <ItemForm
-        onSubmit={handleCreate}
-        isSubmitting={createItem.isPending}
-        errorMessage={getErrorMessage(createItem.isError, createItem.error)}
-        extraActions={
-          <Button type="button" variant="outline" onClick={() => setIsAddStockDialogOpen(true)}>
+      <HStack justify="space-between">
+        <Heading size="xl">Productos</Heading>
+        <HStack>
+          <Button variant="outline" onClick={() => setIsAddStockDialogOpen(true)}>
             Agregar existencias
           </Button>
-        }
-      />
+          <Button colorPalette="brand" onClick={handleOpenCreate}>
+            Crear producto
+          </Button>
+        </HStack>
+      </HStack>
 
       {items.isPending && (
         <Center py="8">
@@ -126,6 +134,27 @@ export function ItemsPage() {
           onToggleActive={handleToggleActive}
           onDelete={setDeletingItem}
         />
+      )}
+
+      {creating && (
+        <Dialog.Root open onOpenChange={(details) => !details.open && setCreating(false)}>
+          <Dialog.Backdrop />
+          <Dialog.Positioner>
+            <Dialog.Content>
+              <Dialog.Header>
+                <Dialog.Title>Crear producto</Dialog.Title>
+              </Dialog.Header>
+              <Dialog.Body>
+                <ItemForm
+                  onSubmit={handleCreate}
+                  onCancel={() => setCreating(false)}
+                  isSubmitting={createItem.isPending}
+                  errorMessage={getErrorMessage(createItem.isError, createItem.error)}
+                />
+              </Dialog.Body>
+            </Dialog.Content>
+          </Dialog.Positioner>
+        </Dialog.Root>
       )}
 
       {editingItem && (

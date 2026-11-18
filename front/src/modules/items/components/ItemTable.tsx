@@ -1,5 +1,6 @@
 import { Button, Switch, Table } from "@chakra-ui/react";
 
+import { formatCop, formatStock } from "../formatters";
 import type { Item } from "../types";
 
 type Props = {
@@ -28,9 +29,9 @@ export function ItemTable({ items, onEdit, onToggleActive, onDelete }: Props) {
           <Table.Row key={item.id}>
             <Table.Cell>{item.codigo}</Table.Cell>
             <Table.Cell>{item.nombre}</Table.Cell>
-            <Table.Cell>{item.costo}</Table.Cell>
-            <Table.Cell>{item.precio_venta}</Table.Cell>
-            <Table.Cell>{item.existencias}</Table.Cell>
+            <Table.Cell>{formatCop(item.costo)}</Table.Cell>
+            <Table.Cell>{formatCop(item.precio_venta)}</Table.Cell>
+            <Table.Cell>{formatStock(item.existencias)}</Table.Cell>
             <Table.Cell>
               <Switch.Root
                 checked={item.activo}

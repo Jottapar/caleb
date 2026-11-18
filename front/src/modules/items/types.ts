@@ -20,6 +20,8 @@ export type ItemCreate = {
   costo?: string;
   precio_venta?: string;
   cantidad_inicial?: string;
+  se_vende?: boolean;
+  es_insumo?: boolean;
 };
 
 export type ItemUpdate = {

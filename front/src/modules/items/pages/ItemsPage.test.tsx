@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 
@@ -40,7 +40,10 @@ it("muestra la lista de productos con sus existencias", async () => {
   renderPage();
 
   expect(await screen.findByText("Harina de trigo")).toBeInTheDocument();
-  expect(screen.getByText("10.0000")).toBeInTheDocument();
+  // Costo y precio en COP sin decimales; existencias sin decimal cuando es entero
+  expect(screen.getByText(/^2\.000\sCOP$/)).toBeInTheDocument();
+  expect(screen.getByText(/^3\.500\sCOP$/)).toBeInTheDocument();
+  expect(screen.getByText("10")).toBeInTheDocument();
 });
 
 it("registra un producto y aparece en la lista", async () => {
@@ -69,11 +72,70 @@ it("registra un producto y aparece en la lista", async () => {
   const user = userEvent.setup();
 
   renderPage();
-  await screen.findByRole("option", { name: "Sin impuesto" });
-  await user.type(screen.getByLabelText(/nombre/i), "Harina de trigo");
-  await user.click(screen.getByRole("button", { name: /guardar/i }));
+  await user.click(await screen.findByRole("button", { name: "Crear producto" }));
+  const dialog = await screen.findByRole("dialog");
+  await within(dialog).findByRole("option", { name: "Sin impuesto" });
+  await user.type(within(dialog).getByLabelText(/nombre/i), "Harina de trigo");
+  await user.click(within(dialog).getByRole("button", { name: /guardar/i }));
 
   expect(await screen.findByText("Harina de trigo")).toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+it("envía se_vende y es_insumo según los checks del formulario", async () => {
+  let enviado: Record<string, unknown> = {};
+  server.use(
+    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
+    http.get(ITEMS_URL, () => HttpResponse.json([])),
+    http.post(ITEMS_URL, async ({ request }) => {
+      enviado = (await request.json()) as Record<string, unknown>;
+      return HttpResponse.json({ ...HARINA, ...enviado }, { status: 201 });
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Crear producto" }));
+  const dialog = await screen.findByRole("dialog");
+  await within(dialog).findByRole("option", { name: "Sin impuesto" });
+  expect(within(dialog).getByRole("checkbox", { name: "Se vende" })).toBeChecked();
+  expect(within(dialog).getByRole("checkbox", { name: "Es insumo" })).not.toBeChecked();
+  await user.type(within(dialog).getByLabelText(/nombre/i), "Harina de trigo");
+  await user.click(within(dialog).getByText("Se vende"));
+  await user.click(within(dialog).getByText("Es insumo"));
+  await user.click(within(dialog).getByRole("button", { name: /guardar/i }));
+
+  await waitFor(() => expect(enviado).toMatchObject({ se_vende: false, es_insumo: true }));
+});
+
+it("deja la ventana abierta y muestra el error si crear el producto falla", async () => {
+  server.use(
+    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
+    http.get(ITEMS_URL, () => HttpResponse.json([])),
+    http.post(ITEMS_URL, () =>
+      HttpResponse.json(
+        {
+          error: "business_error",
+          message: "El producto debe venderse, ser insumo, o las dos cosas",
+        },
+        { status: 422 },
+      ),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Crear producto" }));
+  const dialog = await screen.findByRole("dialog");
+  await within(dialog).findByRole("option", { name: "Sin impuesto" });
+  await user.type(within(dialog).getByLabelText(/nombre/i), "Harina de trigo");
+  await user.click(within(dialog).getByText("Se vende"));
+  await user.click(within(dialog).getByRole("button", { name: /guardar/i }));
+
+  expect(
+    await within(dialog).findByText("El producto debe venderse, ser insumo, o las dos cosas"),
+  ).toBeInTheDocument();
+  expect(within(dialog).getByDisplayValue("Harina de trigo")).toBeInTheDocument();
 });
 
 const HARINA = {
@@ -350,7 +412,7 @@ it("actualiza las existencias de todas las líneas al confirmar", async () => {
   await user.click(within(dialog).getByRole("button", { name: "Agregar" }));
   await user.click(within(dialog).getByRole("button", { name: "Actualizar existencias" }));
 
-  expect(await screen.findByText("15.0000")).toBeInTheDocument();
+  expect(await screen.findByText("15")).toBeInTheDocument();
 });
 
 it("si falla la actualización, el carrito sigue con sus líneas y muestra el error", async () => {

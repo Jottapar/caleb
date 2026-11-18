@@ -1,5 +1,4 @@
-import { Button, Field, HStack, Input, NativeSelect, Stack, Text } from "@chakra-ui/react";
-import type { ReactNode } from "react";
+import { Button, Checkbox, Field, HStack, Input, NativeSelect, Stack, Text } from "@chakra-ui/react";
 import { useState } from "react";
 
 import { useTaxes } from "../../taxes/hooks/useTaxes";
@@ -12,7 +11,6 @@ type Props = (
   onCancel?: () => void;
   isSubmitting: boolean;
   errorMessage: string | null;
-  extraActions?: ReactNode;
 };
 
 export function ItemForm({
@@ -21,7 +19,6 @@ export function ItemForm({
   onCancel,
   isSubmitting,
   errorMessage,
-  extraActions,
 }: Props) {
   const taxes = useTaxes();
   const [nombre, setNombre] = useState(initialValues?.nombre ?? "");
@@ -30,6 +27,10 @@ export function ItemForm({
   const [precioVenta, setPrecioVenta] = useState(initialValues?.precio_venta ?? "");
   const [cantidadInicial, setCantidadInicial] = useState("");
   const [impuestoId, setImpuestoId] = useState(initialValues?.impuesto_id.toString() ?? "");
+  // Solo se piden al crear. Por defecto un producto nuevo se vende y no es insumo,
+  // igual que los defaults del backend.
+  const [seVende, setSeVende] = useState(true);
+  const [esInsumo, setEsInsumo] = useState(false);
 
   const impuestoSeleccionado = impuestoId || taxes.data?.[0]?.id.toString() || "";
 
@@ -51,12 +52,9 @@ export function ItemForm({
       precio_venta: precioVenta,
       cantidad_inicial: cantidadInicial,
       impuesto_id: Number(impuestoSeleccionado),
+      se_vende: seVende,
+      es_insumo: esInsumo,
     });
-    setNombre("");
-    setCodigo("");
-    setCosto("");
-    setPrecioVenta("");
-    setCantidadInicial("");
   }
 
   return (
@@ -109,6 +107,21 @@ export function ItemForm({
         </NativeSelect.Root>
       </Field.Root>
 
+      {!initialValues && (
+        <Stack gap="2">
+          <Checkbox.Root checked={seVende} onCheckedChange={(e) => setSeVende(e.checked === true)}>
+            <Checkbox.HiddenInput />
+            <Checkbox.Control />
+            <Checkbox.Label>Se vende</Checkbox.Label>
+          </Checkbox.Root>
+          <Checkbox.Root checked={esInsumo} onCheckedChange={(e) => setEsInsumo(e.checked === true)}>
+            <Checkbox.HiddenInput />
+            <Checkbox.Control />
+            <Checkbox.Label>Es insumo</Checkbox.Label>
+          </Checkbox.Root>
+        </Stack>
+      )}
+
       {errorMessage && <Text color="fg.error">{errorMessage}</Text>}
 
       <HStack>
@@ -120,7 +133,6 @@ export function ItemForm({
             Cerrar
           </Button>
         )}
-        {extraActions}
       </HStack>
     </Stack>
   );

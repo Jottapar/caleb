@@ -20,7 +20,7 @@ const nav = (
       <RouterLink to="/terceros">Clientes y proveedores</RouterLink>
     </Link>
     <Link asChild color="white" fontWeight="medium" px="2" py="1" borderRadius="md" bg="whiteAlpha.100">
-      <RouterLink to="/productos">Productos y existencias</RouterLink>
+      <RouterLink to="/productos">Productos</RouterLink>
     </Link>
     <Link asChild color="white" fontWeight="medium" px="2" py="1" borderRadius="md" bg="whiteAlpha.100">
       <RouterLink to="/recibos">Recibos</RouterLink>
