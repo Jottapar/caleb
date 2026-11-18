@@ -47,6 +47,7 @@ export function ThirdPartiesPage() {
   const createThirdParty = useCreateThirdParty();
   const updateThirdParty = useUpdateThirdParty();
   const deleteThirdParty = useDeleteThirdParty();
+  const [creating, setCreating] = useState(false);
   const [editingThirdParty, setEditingThirdParty] = useState<ThirdParty | null>(null);
   const [deletingThirdParty, setDeletingThirdParty] = useState<ThirdParty | null>(null);
   const [page, setPage] = useState(1);
@@ -81,8 +82,16 @@ export function ThirdPartiesPage() {
     setPage(1);
   }
 
+  function handleOpenCreate() {
+    // Limpia el error de un intento anterior para que no aparezca al reabrir la ventana.
+    createThirdParty.reset();
+    setCreating(true);
+  }
+
+  // La ventana se cierra solo si el backend guardó: si falla, queda abierta con los
+  // datos escritos y el error a la vista para que el usuario corrija.
   function handleCreate(data: ThirdPartyCreate) {
-    createThirdParty.mutate(data);
+    createThirdParty.mutate(data, { onSuccess: () => setCreating(false) });
   }
 
   function handleToggleActive(thirdParty: ThirdParty, activo: boolean) {
@@ -110,15 +119,12 @@ export function ThirdPartiesPage() {
 
   return (
     <Stack gap="6">
-      <Heading size="xl">Clientes y proveedores</Heading>
-
-      <ThirdPartyForm
-        banks={banks.data ?? []}
-        banksError={banks.isError}
-        onSubmit={handleCreate}
-        isSubmitting={createThirdParty.isPending}
-        errorMessage={getErrorMessage(createThirdParty.isError, createThirdParty.error)}
-      />
+      <HStack justify="space-between">
+        <Heading size="xl">Clientes y proveedores</Heading>
+        <Button colorPalette="brand" onClick={handleOpenCreate}>
+          Crear cliente o proveedor
+        </Button>
+      </HStack>
 
       {thirdParties.isPending && (
         <Center py="8">
@@ -162,6 +168,32 @@ export function ThirdPartiesPage() {
             </>
           )}
         </>
+      )}
+
+      {creating && (
+        <Dialog.Root
+          open
+          onOpenChange={(details) => !details.open && setCreating(false)}
+        >
+          <Dialog.Backdrop />
+          <Dialog.Positioner>
+            <Dialog.Content>
+              <Dialog.Header>
+                <Dialog.Title>Crear cliente o proveedor</Dialog.Title>
+              </Dialog.Header>
+              <Dialog.Body>
+                <ThirdPartyForm
+                  banks={banks.data ?? []}
+                  banksError={banks.isError}
+                  onSubmit={handleCreate}
+                  onCancel={() => setCreating(false)}
+                  isSubmitting={createThirdParty.isPending}
+                  errorMessage={getErrorMessage(createThirdParty.isError, createThirdParty.error)}
+                />
+              </Dialog.Body>
+            </Dialog.Content>
+          </Dialog.Positioner>
+        </Dialog.Root>
       )}
 
       {editingThirdParty && (

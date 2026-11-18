@@ -87,16 +87,6 @@ export function ThirdPartyForm({
         ? { banco_id: Number(bancoId), tipo_cuenta: tipoCuenta, numero_cuenta: numeroCuenta }
         : null,
     });
-    if (!initialValues) {
-      setNombre("");
-      setDocumento("");
-      setEmail("");
-      setTelefono("");
-      setDireccion("");
-      setBancoId("");
-      setTipoCuenta("ahorros");
-      setNumeroCuenta("");
-    }
   }
 
   return (

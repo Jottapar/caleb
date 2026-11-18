@@ -20,6 +20,12 @@ function renderPage() {
   renderWithProviders([{ path: "/", element: <ThirdPartiesPage /> }]);
 }
 
+// El formulario de crear vive en una ventana: hay que abrirla con el botón.
+async function openCreateDialog(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole("button", { name: /crear cliente o proveedor/i }));
+  await screen.findByRole("heading", { name: /crear cliente o proveedor/i });
+}
+
 it("muestra la lista de terceros que devuelve la API", async () => {
   server.use(
     http.get(URL, () =>
@@ -66,10 +72,28 @@ it("registra un tercero y lo agrega a la lista", async () => {
   const user = userEvent.setup();
 
   renderPage();
+  await openCreateDialog(user);
   await user.type(screen.getByLabelText(/nombre/i), "Carlos");
   await user.click(screen.getByRole("button", { name: /guardar/i }));
 
+  // La ventana se cierra al guardar y el tercero aparece en la lista.
   expect(await screen.findByText("Carlos")).toBeInTheDocument();
+  await vi.waitFor(() =>
+    expect(screen.queryByRole("heading", { name: /crear cliente o proveedor/i })).not.toBeInTheDocument(),
+  );
+});
+
+it("la ventana de crear se cierra con Cerrar sin guardar nada", async () => {
+  server.use(http.get(URL, () => HttpResponse.json([])), failIfPosted());
+  const user = userEvent.setup();
+
+  renderPage();
+  await openCreateDialog(user);
+  await user.click(screen.getByRole("button", { name: /cerrar/i }));
+
+  await vi.waitFor(() =>
+    expect(screen.queryByRole("heading", { name: /crear cliente o proveedor/i })).not.toBeInTheDocument(),
+  );
 });
 
 it("muestra el error del backend cuando el nombre esta vacio", async () => {
@@ -85,9 +109,12 @@ it("muestra el error del backend cuando el nombre esta vacio", async () => {
   const user = userEvent.setup();
 
   renderPage();
+  await openCreateDialog(user);
   await user.click(screen.getByRole("button", { name: /guardar/i }));
 
+  // Con error la ventana queda abierta para que el usuario corrija.
   expect(await screen.findByText("El nombre del tercero es obligatorio")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: /crear cliente o proveedor/i })).toBeInTheDocument();
 });
 
 const ANA = {
@@ -264,6 +291,7 @@ it("envia la cuenta bancaria elegida", async () => {
   const user = userEvent.setup();
 
   renderPage();
+  await openCreateDialog(user);
   await user.type(screen.getByLabelText(/nombre/i), "Insumos SAS");
   await user.selectOptions(screen.getByLabelText(/^banco/i), await screen.findByRole("option", { name: "Bancolombia" }));
   await user.selectOptions(screen.getByLabelText(/tipo de cuenta/i), "corriente");
@@ -290,6 +318,7 @@ it("envia la cuenta bancaria en null si no se elige banco", async () => {
   const user = userEvent.setup();
 
   renderPage();
+  await openCreateDialog(user);
   await user.type(screen.getByLabelText(/nombre/i), "Carlos");
   await user.click(screen.getByRole("button", { name: /guardar/i }));
 
@@ -363,6 +392,7 @@ it("al crear no envia y avisa si el correo no tiene formato de correo", async ()
   const user = userEvent.setup();
 
   renderPage();
+  await openCreateDialog(user);
   await user.type(screen.getByLabelText(/correo/i), "carlos@dominio");
   await user.click(screen.getByRole("button", { name: /guardar/i }));
 
@@ -374,6 +404,7 @@ it("al crear no envia y avisa si el telefono tiene algo distinto de numeros", as
   const user = userEvent.setup();
 
   renderPage();
+  await openCreateDialog(user);
   await user.type(screen.getByLabelText(/teléfono/i), "300 123 4567");
   await user.click(screen.getByRole("button", { name: /guardar/i }));
 
@@ -385,6 +416,7 @@ it("al crear no envia y avisa si el numero de cuenta tiene algo distinto de nume
   const user = userEvent.setup();
 
   renderPage();
+  await openCreateDialog(user);
   await user.selectOptions(
     screen.getByLabelText(/^banco/i),
     await screen.findByRole("option", { name: "Bancolombia" }),
@@ -402,6 +434,7 @@ it("el numero de cuenta no deja escribir mas de 20 digitos", async () => {
   const user = userEvent.setup();
 
   renderPage();
+  await openCreateDialog(user);
   await user.selectOptions(
     screen.getByLabelText(/^banco/i),
     await screen.findByRole("option", { name: "Bancolombia" }),
