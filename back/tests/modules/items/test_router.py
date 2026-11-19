@@ -645,3 +645,34 @@ def test_create_item_code_ignores_codes_written_by_hand(logged_in_client, sessio
     ).json()
 
     assert nuevo["codigo"] == "P-0001"
+
+
+def test_item_reports_whether_it_has_movements(logged_in_client, session):
+    impuesto_id = _sin_impuesto_id(session)
+    headers = _csrf_headers(logged_in_client)
+    sin = logged_in_client.post(
+        URL, json={"nombre": "Sin stock", "impuesto_id": impuesto_id}, headers=headers
+    ).json()
+    con = logged_in_client.post(
+        URL,
+        json={"nombre": "Con stock", "impuesto_id": impuesto_id, "cantidad_inicial": "5"},
+        headers=headers,
+    ).json()
+
+    assert sin["tiene_movimientos"] is False
+    assert con["tiene_movimientos"] is True
+    listados = {i["nombre"]: i["tiene_movimientos"] for i in logged_in_client.get(URL).json()}
+    assert listados == {"Sin stock": False, "Con stock": True}
+
+
+def test_item_gets_movements_after_adding_stock(logged_in_client, session):
+    headers = _csrf_headers(logged_in_client)
+    creado = logged_in_client.post(
+        URL, json={"nombre": "Harina", "impuesto_id": _sin_impuesto_id(session)}, headers=headers
+    ).json()
+
+    actualizado = logged_in_client.post(
+        f"{URL}/{creado['id']}/stock-movements", json={"cantidad": "3"}, headers=headers
+    ).json()
+
+    assert actualizado["tiene_movimientos"] is True

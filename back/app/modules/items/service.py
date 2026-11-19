@@ -77,8 +77,20 @@ def get_stock(session: Session, item_id: int) -> Decimal:
     return total if total is not None else Decimal(0)
 
 
+def has_movements(session: Session, item_id: int) -> bool:
+    """True si el producto ya tiene al menos un movimiento de inventario."""
+    primero = session.exec(
+        select(InventoryMovement.id).where(InventoryMovement.item_id == item_id).limit(1)
+    ).first()
+    return primero is not None
+
+
 def _with_stock(session: Session, item: Item) -> ItemRead:
-    return ItemRead(**item.model_dump(), existencias=get_stock(session, item.id))
+    return ItemRead(
+        **item.model_dump(),
+        existencias=get_stock(session, item.id),
+        tiene_movimientos=has_movements(session, item.id),
+    )
 
 
 def create_item(
@@ -229,10 +241,7 @@ def add_stock_bulk(
 
 def delete_item(session: Session, item_id: int, empresa_id: int) -> None:
     item = get_by_id(session, item_id, empresa_id)
-    tiene_movimientos = session.exec(
-        select(InventoryMovement.id).where(InventoryMovement.item_id == item_id).limit(1)
-    ).first()
-    if tiene_movimientos:
+    if has_movements(session, item_id):
         raise BusinessError("No se puede eliminar un producto que ya tiene movimientos de inventario")
 
     session.delete(item)

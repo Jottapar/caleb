@@ -13,6 +13,8 @@ export type Item = {
   es_insumo: boolean;
   activo: boolean;
   existencias: string;
+  // Calculado por el backend: si ya tiene entradas o salidas de inventario (entonces no se elimina)
+  tiene_movimientos: boolean;
 };
 
 export type ItemCreate = {

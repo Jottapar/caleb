@@ -184,6 +184,7 @@ const HARINA = {
   es_insumo: false,
   activo: true,
   existencias: "10.0000",
+  tiene_movimientos: true,
 };
 
 it("abre el drawer con los datos del producto al hacer click en Editar", async () => {
@@ -343,8 +344,20 @@ it("muestra el mensaje del backend y deja el diálogo abierto si un insumo lo us
   expect(screen.getByRole("alertdialog")).toBeInTheDocument();
 });
 
-it("elimina un producto al confirmar en el diálogo", async () => {
-  let items = [HARINA];
+// Un producto registrado por error: inactivo y sin ningún movimiento, el único que se elimina.
+const POR_ERROR = {
+  ...HARINA,
+  activo: false,
+  existencias: "0.0000",
+  tiene_movimientos: false,
+};
+
+async function abrirInactivos(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole("button", { name: "Inactivos" }));
+}
+
+it("elimina un producto inactivo y sin movimientos al confirmar en el diálogo", async () => {
+  let items = [POR_ERROR];
   server.use(
     http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
     http.get(ITEMS_URL, () => HttpResponse.json(items)),
@@ -356,6 +369,7 @@ it("elimina un producto al confirmar en el diálogo", async () => {
   const user = userEvent.setup();
 
   renderPage();
+  await abrirInactivos(user);
   await user.click(await screen.findByRole("button", { name: /eliminar/i }));
   const dialog = await screen.findByRole("alertdialog");
   await user.click(within(dialog).getByRole("button", { name: /eliminar/i }));
@@ -365,10 +379,36 @@ it("elimina un producto al confirmar en el diálogo", async () => {
   ).toBeInTheDocument();
 });
 
+it("no ofrece Eliminar en un producto activo, aunque no tenga movimientos", async () => {
+  mockItems([{ ...POR_ERROR, activo: true }]);
+
+  renderPage();
+
+  await screen.findByText("Harina de trigo");
+  expect(
+    screen.queryByRole("button", { name: /eliminar/i }),
+  ).not.toBeInTheDocument();
+});
+
+it("no ofrece Eliminar en un producto inactivo que ya tiene movimientos", async () => {
+  mockItems([{ ...POR_ERROR, tiene_movimientos: true }]);
+  const user = userEvent.setup();
+
+  renderPage();
+  await abrirInactivos(user);
+
+  await screen.findByText("Harina de trigo");
+  // Se puede reactivar, pero no eliminar
+  expect(screen.getByRole("button", { name: "Activar" })).toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: /eliminar/i }),
+  ).not.toBeInTheDocument();
+});
+
 it("muestra el error del backend cuando la eliminación falla", async () => {
   server.use(
     http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
-    http.get(ITEMS_URL, () => HttpResponse.json([HARINA])),
+    http.get(ITEMS_URL, () => HttpResponse.json([POR_ERROR])),
     http.delete(`${ITEMS_URL}/:id`, () =>
       HttpResponse.json(
         {
@@ -383,6 +423,7 @@ it("muestra el error del backend cuando la eliminación falla", async () => {
   const user = userEvent.setup();
 
   renderPage();
+  await abrirInactivos(user);
   await user.click(await screen.findByRole("button", { name: /eliminar/i }));
   const dialog = await screen.findByRole("alertdialog");
   await user.click(within(dialog).getByRole("button", { name: /eliminar/i }));
@@ -395,13 +436,11 @@ it("muestra el error del backend cuando la eliminación falla", async () => {
 });
 
 it("no elimina el producto si cancelo el diálogo", async () => {
-  server.use(
-    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
-    http.get(ITEMS_URL, () => HttpResponse.json([HARINA])),
-  );
+  mockItems([POR_ERROR]);
   const user = userEvent.setup();
 
   renderPage();
+  await abrirInactivos(user);
   await user.click(await screen.findByRole("button", { name: /eliminar/i }));
   await screen.findByRole("heading", { name: /eliminar harina/i });
   await user.click(screen.getByRole("button", { name: /cancelar/i }));

@@ -92,14 +92,18 @@ export function ItemTable({
                   Editar
                 </Button>
                 {activeButton}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  colorPalette="red"
-                  onClick={() => onDelete(row.item)}
-                >
-                  Eliminar
-                </Button>
+                {/* Eliminar es para limpiar un producto registrado por error: solo si ya está
+                    inactivo y nunca tuvo movimientos. Lo que ya se usó solo se desactiva. */}
+                {!row.item.activo && !row.item.tiene_movimientos && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    colorPalette="red"
+                    onClick={() => onDelete(row.item)}
+                  >
+                    Eliminar
+                  </Button>
+                )}
               </Table.Cell>
             </Table.Row>
           );

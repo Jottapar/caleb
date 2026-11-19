@@ -51,3 +51,5 @@ class ItemRead(SQLModel):
     es_insumo: bool
     activo: bool
     existencias: Decimal
+    # Calculado: si ya tiene entradas o salidas de inventario. Un producto con movimientos no se elimina.
+    tiene_movimientos: bool
