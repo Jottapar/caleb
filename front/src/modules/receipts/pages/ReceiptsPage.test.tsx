@@ -638,20 +638,94 @@ it("muestra el detalle completo de un recibo al hacer clic en Ver", async () => 
   expect(within(dialog).getByText("10000.00")).toBeInTheDocument();
 });
 
-it("muestra el estado del recibo en el listado y en el detalle", async () => {
+it("la lista muestra la condición (Contado o Crédito) y si el recibo está Activo o Cancelado", async () => {
   server.use(
     http.get(THIRD_PARTIES_URL, () => HttpResponse.json([CLIENTE])),
     http.get(ITEMS_URL, () => HttpResponse.json([PRODUCTO])),
-    http.get(RECEIPTS_URL, () => HttpResponse.json([RECIBO])),
+    http.get(RECEIPTS_URL, () =>
+      HttpResponse.json([
+        RECIBO, // contado, emitido
+        { ...RECIBO, id: 2, numero: "R-0002", condicion: "credito" },
+        { ...RECIBO, id: 3, numero: "R-0003", estado: "anulado" },
+      ]),
+    ),
   );
   const user = userEvent.setup();
 
   renderPage();
-  expect(await screen.findByText("emitido")).toBeInTheDocument();
+  expect(
+    await screen.findByRole("columnheader", { name: "Condición" }),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("columnheader", { name: "Estado" })).toBeInTheDocument();
+  expect(screen.getAllByRole("cell", { name: "Contado" })).toHaveLength(2);
+  expect(screen.getByRole("cell", { name: "Crédito" })).toBeInTheDocument();
+
+  // Cada fila dice si está activa o cancelada
+  const fila = (numero: string) =>
+    screen.getByText(numero).closest("tr") as HTMLElement;
+  expect(within(fila("R-0001")).getByText("Activo")).toBeInTheDocument();
+  expect(within(fila("R-0002")).getByText("Activo")).toBeInTheDocument();
+  expect(within(fila("R-0003")).getByText("Cancelado")).toBeInTheDocument();
+  // Los valores internos del backend no se muestran
+  expect(screen.queryByText("emitido")).not.toBeInTheDocument();
+  expect(screen.queryByText("anulado")).not.toBeInTheDocument();
+
+  await user.click(within(fila("R-0001")).getByRole("button", { name: "Ver" }));
+  expect(
+    within(await screen.findByRole("dialog")).getByText(/Estado: Activo/),
+  ).toBeInTheDocument();
+});
+
+it("cancela un recibo a crédito desde el detalle tras confirmar", async () => {
+  let recibo = { ...RECIBO, condicion: "credito", saldo: "10000.00" };
+  server.use(
+    http.get(THIRD_PARTIES_URL, () => HttpResponse.json([CLIENTE])),
+    http.get(ITEMS_URL, () => HttpResponse.json([PRODUCTO])),
+    http.get(RECEIPTS_URL, () => HttpResponse.json([recibo])),
+    http.post(`${RECEIPTS_URL}/:id/cancel`, () => {
+      recibo = { ...recibo, estado: "anulado" };
+      return HttpResponse.json(recibo);
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Ver" }));
+  const dialog = await screen.findByRole("dialog");
+  await user.click(
+    within(dialog).getByRole("button", { name: "Cancelar recibo" }),
+  );
+  const confirmDialog = await screen.findByRole("alertdialog");
+  await user.click(
+    within(confirmDialog).getByRole("button", { name: "Cancelar recibo" }),
+  );
+
+  await waitFor(() =>
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+  );
   await user.click(screen.getByRole("button", { name: "Ver" }));
+  expect(
+    within(await screen.findByRole("dialog")).getByText(/Estado: Cancelado/),
+  ).toBeInTheDocument();
+});
+
+it("un recibo anulado no ofrece cancelar de nuevo", async () => {
+  server.use(
+    http.get(THIRD_PARTIES_URL, () => HttpResponse.json([CLIENTE])),
+    http.get(ITEMS_URL, () => HttpResponse.json([PRODUCTO])),
+    http.get(RECEIPTS_URL, () =>
+      HttpResponse.json([{ ...RECIBO, estado: "anulado", condicion: "credito" }]),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Ver" }));
   const dialog = await screen.findByRole("dialog");
 
-  expect(within(dialog).getByText(/emitido/)).toBeInTheDocument();
+  expect(
+    within(dialog).queryByRole("button", { name: "Cancelar recibo" }),
+  ).not.toBeInTheDocument();
 });
 
 it("cancela un recibo desde el detalle tras confirmar", async () => {
@@ -678,8 +752,14 @@ it("cancela un recibo desde el detalle tras confirmar", async () => {
     within(confirmDialog).getByRole("button", { name: "Cancelar recibo" }),
   );
 
-  expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-  expect(await screen.findByText("anulado")).toBeInTheDocument();
+  await waitFor(() =>
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+  );
+  // El estado ya no está en la lista: se ve en el detalle
+  await user.click(await screen.findByRole("button", { name: "Ver" }));
+  expect(
+    within(await screen.findByRole("dialog")).getByText(/Estado: Cancelado/),
+  ).toBeInTheDocument();
 });
 
 it("no cancela el recibo si cierro el diálogo de confirmación sin confirmar", async () => {
@@ -702,7 +782,11 @@ it("no cancela el recibo si cierro el diálogo de confirmación sin confirmar", 
   );
 
   expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-  expect(screen.getByText("emitido")).toBeInTheDocument();
+  // Sigue activo: el botón de cancelar del detalle todavía está
+  await user.click(screen.getByRole("button", { name: "Ver" }));
+  expect(
+    within(await screen.findByRole("dialog")).getByText(/Estado: Activo/),
+  ).toBeInTheDocument();
 });
 
 it("cierra el detalle del recibo y vuelve al listado", async () => {
@@ -883,4 +967,124 @@ it("avisa cuando ningún recibo coincide y Limpiar filtros los restablece", asyn
   expect(screen.getByText("R-0001")).toBeInTheDocument();
   expect(screen.getByLabelText("Emitido desde")).toHaveValue("");
   expect(screen.queryByRole("button", { name: "Limpiar filtros" })).not.toBeInTheDocument();
+});
+
+// ---------- Filtros por condición y por estado ----------
+function reciboCon(
+  id: number,
+  terceroId: number,
+  condicion: "contado" | "credito",
+  estado: "emitido" | "anulado" = "emitido",
+) {
+  return { ...recibo(id, terceroId), condicion, estado };
+}
+
+it("filtra por condición: solo contado o solo crédito", async () => {
+  mockLista([
+    reciboCon(1, 1, "contado"),
+    reciboCon(2, 1, "credito"),
+    reciboCon(3, 2, "credito"),
+  ]);
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("R-0001");
+  await user.selectOptions(
+    screen.getByLabelText("Filtrar por condición"),
+    "Crédito",
+  );
+
+  expect(screen.getByText("R-0002")).toBeInTheDocument();
+  expect(screen.getByText("R-0003")).toBeInTheDocument();
+  expect(screen.queryByText("R-0001")).not.toBeInTheDocument();
+});
+
+it("filtra por estado: solo activos o solo cancelados", async () => {
+  mockLista([
+    reciboCon(1, 1, "contado"),
+    reciboCon(2, 1, "contado", "anulado"),
+    reciboCon(3, 1, "credito", "anulado"),
+  ]);
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("R-0001");
+  await user.selectOptions(
+    screen.getByLabelText("Filtrar por estado"),
+    "Cancelados",
+  );
+
+  expect(screen.getByText("R-0002")).toBeInTheDocument();
+  expect(screen.getByText("R-0003")).toBeInTheDocument();
+  expect(screen.queryByText("R-0001")).not.toBeInTheDocument();
+
+  await user.selectOptions(screen.getByLabelText("Filtrar por estado"), "Activos");
+  expect(screen.getByText("R-0001")).toBeInTheDocument();
+  expect(screen.queryByText("R-0002")).not.toBeInTheDocument();
+});
+
+it("busca los recibos de un cliente y los filtra también por condición", async () => {
+  mockLista([
+    reciboCon(1, 1, "contado"),
+    reciboCon(2, 1, "credito"),
+    reciboCon(3, 2, "credito"),
+    reciboCon(4, 1, "credito", "anulado"),
+  ]);
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("R-0001");
+  await user.selectOptions(screen.getByLabelText("Filtrar por cliente"), "Cliente Uno");
+  // Todos los recibos del cliente, de cualquier condición
+  expect(screen.getByText("R-0001")).toBeInTheDocument();
+  expect(screen.getByText("R-0002")).toBeInTheDocument();
+  expect(screen.getByText("R-0004")).toBeInTheDocument();
+  expect(screen.queryByText("R-0003")).not.toBeInTheDocument();
+
+  // Y ahora solo los de crédito de ese cliente
+  await user.selectOptions(screen.getByLabelText("Filtrar por condición"), "Crédito");
+  expect(screen.getByText("R-0002")).toBeInTheDocument();
+  expect(screen.getByText("R-0004")).toBeInTheDocument();
+  expect(screen.queryByText("R-0001")).not.toBeInTheDocument();
+
+  // Y de esos, solo los activos
+  await user.selectOptions(screen.getByLabelText("Filtrar por estado"), "Activos");
+  expect(screen.getByText("R-0002")).toBeInTheDocument();
+  expect(screen.queryByText("R-0004")).not.toBeInTheDocument();
+});
+
+it("al filtrar por condición o estado vuelve a la primera página", async () => {
+  // 23 recibos; los pares son a crédito (11)
+  mockLista(
+    Array.from({ length: 23 }, (_, index) =>
+      reciboCon(index + 1, 1, (index + 1) % 2 === 0 ? "credito" : "contado"),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("R-0023");
+  await user.click(screen.getByRole("button", { name: /página siguiente/i }));
+  await screen.findByText("Mostrando 11–20 de 23");
+  await user.selectOptions(screen.getByLabelText("Filtrar por condición"), "Crédito");
+
+  expect(await screen.findByText("Mostrando 1–10 de 11")).toBeInTheDocument();
+});
+
+it("Limpiar filtros también restablece la condición y el estado", async () => {
+  mockLista([reciboCon(1, 1, "contado"), reciboCon(2, 1, "credito", "anulado")]);
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("R-0001");
+  await user.selectOptions(screen.getByLabelText("Filtrar por condición"), "Crédito");
+  await user.selectOptions(screen.getByLabelText("Filtrar por estado"), "Activos");
+  expect(screen.getByText("Ningún recibo coincide con el filtro.")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Limpiar filtros" }));
+
+  expect(screen.getByText("R-0001")).toBeInTheDocument();
+  expect(screen.getByText("R-0002")).toBeInTheDocument();
+  expect(screen.getByLabelText("Filtrar por condición")).toHaveValue("todas");
+  expect(screen.getByLabelText("Filtrar por estado")).toHaveValue("todos");
 });

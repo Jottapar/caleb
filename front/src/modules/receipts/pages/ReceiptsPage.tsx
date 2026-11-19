@@ -17,7 +17,11 @@ import { useTechnicalSheets } from "../../technicalSheets";
 import { useThirdParties } from "../../thirdParties/hooks/useThirdParties";
 import { CreateReceiptDialog } from "../components/CreateReceiptDialog";
 import { ReceiptDetailDialog } from "../components/ReceiptDetailDialog";
-import { ReceiptFilters } from "../components/ReceiptFilters";
+import {
+  type ConditionFilter,
+  ReceiptFilters,
+  type StatusFilter,
+} from "../components/ReceiptFilters";
 import { ReceiptTable } from "../components/ReceiptTable";
 import { useCancelReceipt } from "../hooks/useCancelReceipt";
 import { useCreateReceipt } from "../hooks/useCreateReceipt";
@@ -35,17 +39,23 @@ function getErrorMessage(isError: boolean, error: unknown) {
     : ERROR_GENERICO_CREAR;
 }
 
-// Filtra por cliente y por fecha de emisión (desde y hasta, ambas inclusivas). Las fechas son
-// texto "AAAA-MM-DD", así que comparar el texto es comparar las fechas.
-function filterReceipts(
-  receipts: Receipt[],
-  terceroId: string,
-  desde: string,
-  hasta: string,
-) {
+type ReceiptFilterValues = {
+  terceroId: string; // "" = todos los clientes
+  desde: string; // "" = sin límite
+  hasta: string;
+  condicion: ConditionFilter;
+  estado: StatusFilter;
+};
+
+// Filtra por cliente, condición, estado y fecha de emisión (desde y hasta, ambas inclusivas).
+// Las fechas son texto "AAAA-MM-DD", así que comparar el texto es comparar las fechas.
+function filterReceipts(receipts: Receipt[], filters: ReceiptFilterValues) {
+  const { terceroId, desde, hasta, condicion, estado } = filters;
   return receipts.filter(
     (receipt) =>
       (!terceroId || receipt.tercero_id === Number(terceroId)) &&
+      (condicion === "todas" || receipt.condicion === condicion) &&
+      (estado === "todos" || receipt.estado === estado) &&
       (!desde || receipt.fecha >= desde) &&
       (!hasta || receipt.fecha <= hasta),
   );
@@ -75,6 +85,9 @@ export function ReceiptsPage() {
   const [clienteFilter, setClienteFilter] = useState("");
   const [desdeFilter, setDesdeFilter] = useState("");
   const [hastaFilter, setHastaFilter] = useState("");
+  const [condicionFilter, setCondicionFilter] =
+    useState<ConditionFilter>("todas");
+  const [estadoFilter, setEstadoFilter] = useState<StatusFilter>("todos");
   const [viewingReceipt, setViewingReceipt] = useState<Receipt | null>(null);
   const [cancelingReceipt, setCancelingReceipt] = useState<Receipt | null>(
     null,
@@ -92,12 +105,13 @@ export function ReceiptsPage() {
 
   // Primero se filtra y después se pagina: la página se corta del resultado filtrado.
   const filtered = sortNewestFirst(
-    filterReceipts(
-      receipts.data ?? [],
-      clienteFilter,
-      desdeFilter,
-      hastaFilter,
-    ),
+    filterReceipts(receipts.data ?? [], {
+      terceroId: clienteFilter,
+      desde: desdeFilter,
+      hasta: hastaFilter,
+      condicion: condicionFilter,
+      estado: estadoFilter,
+    }),
   );
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -129,7 +143,19 @@ export function ReceiptsPage() {
     setPage(1);
   }
 
+  function handleCondicionFilterChange(condicion: ConditionFilter) {
+    setCondicionFilter(condicion);
+    setPage(1);
+  }
+
+  function handleEstadoFilterChange(estado: StatusFilter) {
+    setEstadoFilter(estado);
+    setPage(1);
+  }
+
   function handleClearFilters() {
+    setCondicionFilter("todas");
+    setEstadoFilter("todos");
     setClienteFilter("");
     setDesdeFilter("");
     setHastaFilter("");
@@ -237,9 +263,13 @@ export function ReceiptsPage() {
             terceroId={clienteFilter}
             desde={desdeFilter}
             hasta={hastaFilter}
+            condicion={condicionFilter}
+            estado={estadoFilter}
             onTerceroChange={handleClienteFilterChange}
             onDesdeChange={handleDesdeFilterChange}
             onHastaChange={handleHastaFilterChange}
+            onCondicionChange={handleCondicionFilterChange}
+            onEstadoChange={handleEstadoFilterChange}
             onClear={handleClearFilters}
           />
           {total === 0 ? (
@@ -315,8 +345,8 @@ export function ReceiptsPage() {
                 <Text>
                   ¿Seguro que quieres cancelar el recibo{" "}
                   {cancelingReceipt.numero}? El inventario que descontó vuelve a
-                  su cantidad anterior y el pago registrado queda anulado. Esta
-                  acción no se puede deshacer.
+                  su cantidad anterior y sus pagos, si tiene, quedan anulados.
+                  Esta acción no se puede deshacer.
                 </Text>
                 {getErrorMessage(
                   cancelReceipt.isError,

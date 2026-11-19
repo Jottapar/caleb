@@ -1,5 +1,6 @@
-import { Button, Table } from "@chakra-ui/react";
+import { Badge, Button, Table } from "@chakra-ui/react";
 
+import { condicionLabel, estadoColor, estadoLabel } from "../receiptLabels";
 import type { Receipt } from "../types";
 
 type Props = {
@@ -19,6 +20,7 @@ export function ReceiptTable({ receipts, getClienteNombre, onView }: Props) {
           <Table.ColumnHeader>Vencimiento</Table.ColumnHeader>
           <Table.ColumnHeader>Total</Table.ColumnHeader>
           <Table.ColumnHeader>Deuda</Table.ColumnHeader>
+          <Table.ColumnHeader>Condición</Table.ColumnHeader>
           <Table.ColumnHeader>Estado</Table.ColumnHeader>
           <Table.ColumnHeader></Table.ColumnHeader>
         </Table.Row>
@@ -32,7 +34,12 @@ export function ReceiptTable({ receipts, getClienteNombre, onView }: Props) {
             <Table.Cell>{receipt.fecha_vencimiento}</Table.Cell>
             <Table.Cell>{receipt.total}</Table.Cell>
             <Table.Cell>{receipt.saldo}</Table.Cell>
-            <Table.Cell>{receipt.estado}</Table.Cell>
+            <Table.Cell>{condicionLabel(receipt.condicion)}</Table.Cell>
+            <Table.Cell>
+              <Badge colorPalette={estadoColor(receipt.estado)}>
+                {estadoLabel(receipt.estado)}
+              </Badge>
+            </Table.Cell>
             <Table.Cell>
               <Button size="sm" variant="ghost" onClick={() => onView(receipt)}>
                 Ver

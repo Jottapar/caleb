@@ -1,5 +1,6 @@
 import { Button, Dialog, HStack, Stack, Table, Text } from "@chakra-ui/react";
 
+import { estadoLabel } from "../receiptLabels";
 import type { Receipt } from "../types";
 
 type Props = {
@@ -28,7 +29,7 @@ export function ReceiptDetailDialog({
               <Stack gap="1">
                 <Text>Cliente: {clienteNombre}</Text>
                 <Text>Fecha: {receipt.fecha}</Text>
-                <Text>Estado: {receipt.estado}</Text>
+                <Text>Estado: {estadoLabel(receipt.estado)}</Text>
               </Stack>
 
               <Table.Root>
@@ -72,17 +73,16 @@ export function ReceiptDetailDialog({
               <Button variant="outline" onClick={onClose}>
                 Cerrar
               </Button>
-              {onCancelRequest &&
-                receipt.estado === "emitido" &&
-                receipt.condicion === "contado" && (
-                  <Button
-                    colorPalette="red"
-                    variant="outline"
-                    onClick={onCancelRequest}
-                  >
-                    Cancelar recibo
-                  </Button>
-                )}
+              {/* Se cancela un recibo emitido, sea de contado o a crédito */}
+              {onCancelRequest && receipt.estado === "emitido" && (
+                <Button
+                  colorPalette="red"
+                  variant="outline"
+                  onClick={onCancelRequest}
+                >
+                  Cancelar recibo
+                </Button>
+              )}
             </HStack>
           </Dialog.Footer>
         </Dialog.Content>
