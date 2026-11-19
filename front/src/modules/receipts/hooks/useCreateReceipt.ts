@@ -14,13 +14,27 @@ export function useCreateReceipt() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ terceroId, lineas, condicion, fechaVencimiento }: CreateReceiptInput) =>
+    mutationFn: ({
+      terceroId,
+      lineas,
+      condicion,
+      fechaVencimiento,
+    }: CreateReceiptInput) =>
       api
         .post<Receipt>("/receipts", {
           tercero_id: terceroId,
-          lineas: lineas.map((linea) => ({ item_id: linea.itemId, cantidad: linea.cantidad })),
+          lineas: lineas
+            .filter((linea) => linea.kind === "item")
+            .map((linea) => ({ item_id: linea.id, cantidad: linea.cantidad })),
+          lineas_fichas: lineas
+            .filter((linea) => linea.kind === "sheet")
+            .map((linea) => ({
+              ficha_tecnica_id: linea.id,
+              cantidad: linea.cantidad,
+            })),
           condicion,
-          fecha_vencimiento: condicion === "credito" ? fechaVencimiento : undefined,
+          fecha_vencimiento:
+            condicion === "credito" ? fechaVencimiento : undefined,
         })
         .then((response) => response.data),
     onSuccess: () => {

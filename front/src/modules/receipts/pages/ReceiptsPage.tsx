@@ -1,8 +1,18 @@
-import { Button, Center, Dialog, Heading, HStack, Spinner, Stack, Text } from "@chakra-ui/react";
+import {
+  Button,
+  Center,
+  Dialog,
+  Heading,
+  HStack,
+  Spinner,
+  Stack,
+  Text,
+} from "@chakra-ui/react";
 import { isAxiosError } from "axios";
 import { useState } from "react";
 
 import { useItems } from "../../items/hooks/useItems";
+import { useTechnicalSheets } from "../../technicalSheets";
 import { useThirdParties } from "../../thirdParties/hooks/useThirdParties";
 import { CreateReceiptDialog } from "../components/CreateReceiptDialog";
 import { ReceiptDetailDialog } from "../components/ReceiptDetailDialog";
@@ -27,6 +37,7 @@ export function ReceiptsPage() {
   const receipts = useReceipts();
   const thirdParties = useThirdParties();
   const items = useItems();
+  const sheets = useTechnicalSheets();
   const createReceipt = useCreateReceipt();
   const cancelReceipt = useCancelReceipt();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -35,16 +46,25 @@ export function ReceiptsPage() {
   const [fechaVencimiento, setFechaVencimiento] = useState("");
   const [cartLines, setCartLines] = useState<ReceiptCartLine[]>([]);
   const [viewingReceipt, setViewingReceipt] = useState<Receipt | null>(null);
-  const [cancelingReceipt, setCancelingReceipt] = useState<Receipt | null>(null);
+  const [cancelingReceipt, setCancelingReceipt] = useState<Receipt | null>(
+    null,
+  );
 
-  // Solo clientes (o "ambos") pueden ir en un recibo, y solo productos marcados para venderse
+  // Solo clientes (o "ambos") pueden ir en un recibo. Se vende lo que está activo: productos
+  // marcados para venderse y fichas técnicas.
   const clientes = (thirdParties.data ?? []).filter(
     (tercero) => tercero.tipo === "cliente" || tercero.tipo === "ambos",
   );
-  const vendibles = (items.data ?? []).filter((item) => item.se_vende);
+  const vendibles = (items.data ?? []).filter(
+    (item) => item.se_vende && item.activo,
+  );
+  const fichasVendibles = (sheets.data ?? []).filter((sheet) => sheet.activo);
 
   function getClienteNombre(terceroId: number) {
-    return thirdParties.data?.find((tercero) => tercero.id === terceroId)?.nombre ?? "";
+    return (
+      thirdParties.data?.find((tercero) => tercero.id === terceroId)?.nombre ??
+      ""
+    );
   }
 
   function handleOpenCreateDialog() {
@@ -62,11 +82,17 @@ export function ReceiptsPage() {
   }
 
   function handleAddCartLine(linea: ReceiptCartLine) {
-    setCartLines((lineas) => [...lineas.filter((l) => l.itemId !== linea.itemId), linea]);
+    // Si ya estaba, se reemplaza su cantidad: un producto o ficha no se repite en el carrito.
+    setCartLines((lineas) => [
+      ...lineas.filter((l) => !(l.kind === linea.kind && l.id === linea.id)),
+      linea,
+    ]);
   }
 
-  function handleRemoveCartLine(itemId: number) {
-    setCartLines((lineas) => lineas.filter((linea) => linea.itemId !== itemId));
+  function handleRemoveCartLine(quitar: ReceiptCartLine) {
+    setCartLines((lineas) =>
+      lineas.filter((l) => !(l.kind === quitar.kind && l.id === quitar.id)),
+    );
   }
 
   function handleCancelRequest() {
@@ -85,7 +111,12 @@ export function ReceiptsPage() {
 
   function handleConfirmCreate() {
     createReceipt.mutate(
-      { terceroId: Number(terceroId), lineas: cartLines, condicion, fechaVencimiento },
+      {
+        terceroId: Number(terceroId),
+        lineas: cartLines,
+        condicion,
+        fechaVencimiento,
+      },
       {
         onSuccess: () => {
           setCartLines([]);
@@ -99,7 +130,11 @@ export function ReceiptsPage() {
     <Stack gap="6">
       <Heading size="xl">Recibos</Heading>
 
-      <Button alignSelf="flex-start" colorPalette="brand" onClick={handleOpenCreateDialog}>
+      <Button
+        alignSelf="flex-start"
+        colorPalette="brand"
+        onClick={handleOpenCreateDialog}
+      >
         Crear Recibo
       </Button>
 
@@ -110,7 +145,9 @@ export function ReceiptsPage() {
       )}
 
       {receipts.isError && (
-        <Text color="fg.error">No pudimos cargar tus recibos. Intenta de nuevo.</Text>
+        <Text color="fg.error">
+          No pudimos cargar tus recibos. Intenta de nuevo.
+        </Text>
       )}
 
       {receipts.data && receipts.data.length === 0 && (
@@ -129,6 +166,7 @@ export function ReceiptsPage() {
         <CreateReceiptDialog
           thirdParties={clientes}
           items={vendibles}
+          sheets={fichasVendibles}
           terceroId={terceroId}
           onTerceroChange={setTerceroId}
           condicion={condicion}
@@ -141,7 +179,10 @@ export function ReceiptsPage() {
           onConfirm={handleConfirmCreate}
           onClose={handleCloseCreateDialog}
           isSubmitting={createReceipt.isPending}
-          errorMessage={getErrorMessage(createReceipt.isError, createReceipt.error)}
+          errorMessage={getErrorMessage(
+            createReceipt.isError,
+            createReceipt.error,
+          )}
         />
       )}
 
@@ -164,23 +205,35 @@ export function ReceiptsPage() {
           <Dialog.Positioner>
             <Dialog.Content>
               <Dialog.Header>
-                <Dialog.Title>Cancelar recibo {cancelingReceipt.numero}</Dialog.Title>
+                <Dialog.Title>
+                  Cancelar recibo {cancelingReceipt.numero}
+                </Dialog.Title>
               </Dialog.Header>
               <Dialog.Body>
                 <Text>
-                  ¿Seguro que quieres cancelar el recibo {cancelingReceipt.numero}? El inventario
-                  que descontó vuelve a su cantidad anterior y el pago registrado queda anulado.
-                  Esta acción no se puede deshacer.
+                  ¿Seguro que quieres cancelar el recibo{" "}
+                  {cancelingReceipt.numero}? El inventario que descontó vuelve a
+                  su cantidad anterior y el pago registrado queda anulado. Esta
+                  acción no se puede deshacer.
                 </Text>
-                {getErrorMessage(cancelReceipt.isError, cancelReceipt.error) && (
+                {getErrorMessage(
+                  cancelReceipt.isError,
+                  cancelReceipt.error,
+                ) && (
                   <Text color="fg.error" mt="2">
-                    {getErrorMessage(cancelReceipt.isError, cancelReceipt.error)}
+                    {getErrorMessage(
+                      cancelReceipt.isError,
+                      cancelReceipt.error,
+                    )}
                   </Text>
                 )}
               </Dialog.Body>
               <Dialog.Footer>
                 <HStack>
-                  <Button variant="outline" onClick={() => setCancelingReceipt(null)}>
+                  <Button
+                    variant="outline"
+                    onClick={() => setCancelingReceipt(null)}
+                  >
                     Cancelar
                   </Button>
                   <Button

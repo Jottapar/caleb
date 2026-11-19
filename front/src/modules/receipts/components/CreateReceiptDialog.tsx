@@ -13,12 +13,14 @@ import {
 import { useState } from "react";
 
 import type { Item } from "../../items/types";
+import type { TechnicalSheet } from "../../technicalSheets";
 import { CreateThirdPartyDialog, type ThirdParty } from "../../thirdParties";
 import type { ReceiptCartLine } from "../types";
 
 type Props = {
   thirdParties: ThirdParty[];
-  items: Item[];
+  items: Item[]; // solo productos activos que se venden
+  sheets: TechnicalSheet[]; // solo fichas técnicas activas
   terceroId: string;
   onTerceroChange: (terceroId: string) => void;
   condicion: string;
@@ -27,7 +29,7 @@ type Props = {
   onFechaVencimientoChange: (fecha: string) => void;
   lineas: ReceiptCartLine[];
   onAddLine: (linea: ReceiptCartLine) => void;
-  onRemoveLine: (itemId: number) => void;
+  onRemoveLine: (linea: ReceiptCartLine) => void;
   onConfirm: () => void;
   onClose: () => void;
   isSubmitting: boolean;
@@ -37,6 +39,7 @@ type Props = {
 export function CreateReceiptDialog({
   thirdParties,
   items,
+  sheets,
   terceroId,
   onTerceroChange,
   condicion,
@@ -51,7 +54,28 @@ export function CreateReceiptDialog({
   isSubmitting,
   errorMessage,
 }: Props) {
-  const [itemId, setItemId] = useState(items[0]?.id.toString() ?? "");
+  // Productos y fichas van en una sola lista. La clave ("item-1", "sheet-1") distingue un
+  // producto de una ficha con el mismo id.
+  const options = [
+    ...items.map((item) => ({
+      key: `item-${item.id}`,
+      kind: "item" as const,
+      id: item.id,
+      nombre: item.nombre,
+      label: item.nombre,
+    })),
+    ...sheets.map((sheet) => ({
+      key: `sheet-${sheet.id}`,
+      kind: "sheet" as const,
+      id: sheet.id,
+      nombre: sheet.nombre,
+      label: `${sheet.nombre} (ficha ${sheet.codigo})`,
+    })),
+  ];
+  const [selectedKey, setSelectedKey] = useState("");
+  // Mientras no se haya elegido nada (o lo elegido ya no está), se ofrece el primero.
+  const selected =
+    options.find((option) => option.key === selectedKey) ?? options[0];
   const [cantidad, setCantidad] = useState("");
   const [creatingClient, setCreatingClient] = useState(false);
 
@@ -60,13 +84,27 @@ export function CreateReceiptDialog({
   );
 
   function handleAddLine() {
-    const item = items.find((candidate) => candidate.id === Number(itemId));
-    if (!item || !cantidad) {
+    if (!selected || !cantidad) {
       return;
     }
-    onAddLine({ itemId: item.id, nombre: item.nombre, cantidad });
+    onAddLine({
+      kind: selected.kind,
+      id: selected.id,
+      nombre: selected.nombre,
+      cantidad,
+    });
     setCantidad("");
   }
+
+  // Lo que todavía falta para poder crear el recibo, en palabras, para explicar el botón.
+  const faltan = [
+    !terceroId && "elegir un cliente",
+    !condicion && "elegir la condición",
+    condicion === "credito" &&
+      !fechaVencimiento &&
+      "indicar la fecha de vencimiento",
+    lineas.length === 0 && "agregar al menos un producto o ficha técnica",
+  ].filter(Boolean);
 
   return (
     <>
@@ -129,18 +167,18 @@ export function CreateReceiptDialog({
                   </Box>
                 )}
 
-                {/* Producto y cantidad en la misma fila, con el botón de agregar al lado */}
+                {/* Producto o ficha y cantidad en la misma fila, con el botón de agregar al lado */}
                 <HStack align="end">
                   <Field.Root required flex="2">
                     <Field.Label>Producto</Field.Label>
                     <NativeSelect.Root>
                       <NativeSelect.Field
-                        value={itemId}
-                        onChange={(event) => setItemId(event.target.value)}
+                        value={selected?.key ?? ""}
+                        onChange={(event) => setSelectedKey(event.target.value)}
                       >
-                        {items.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.nombre}
+                        {options.map((option) => (
+                          <option key={option.key} value={option.key}>
+                            {option.label}
                           </option>
                         ))}
                       </NativeSelect.Field>
@@ -192,21 +230,23 @@ export function CreateReceiptDialog({
                   <Table.Root>
                     <Table.Header>
                       <Table.Row>
-                        <Table.ColumnHeader>Producto</Table.ColumnHeader>
+                        <Table.ColumnHeader>
+                          Producto o ficha
+                        </Table.ColumnHeader>
                         <Table.ColumnHeader>Cantidad</Table.ColumnHeader>
                         <Table.ColumnHeader></Table.ColumnHeader>
                       </Table.Row>
                     </Table.Header>
                     <Table.Body>
                       {lineas.map((linea) => (
-                        <Table.Row key={linea.itemId}>
+                        <Table.Row key={`${linea.kind}-${linea.id}`}>
                           <Table.Cell>{linea.nombre}</Table.Cell>
                           <Table.Cell>{linea.cantidad}</Table.Cell>
                           <Table.Cell>
                             <Button
                               size="sm"
                               variant="ghost"
-                              onClick={() => onRemoveLine(linea.itemId)}
+                              onClick={() => onRemoveLine(linea)}
                             >
                               Quitar
                             </Button>
@@ -215,6 +255,11 @@ export function CreateReceiptDialog({
                       ))}
                     </Table.Body>
                   </Table.Root>
+                )}
+
+                {/* Mientras falte algo, el botón de crear está deshabilitado: aquí se dice qué */}
+                {faltan.length > 0 && (
+                  <Text color="fg.muted">Falta: {faltan.join(", ")}.</Text>
                 )}
 
                 {errorMessage && <Text color="fg.error">{errorMessage}</Text>}
@@ -228,12 +273,7 @@ export function CreateReceiptDialog({
                 <Button
                   colorPalette="brand"
                   loading={isSubmitting}
-                  disabled={
-                    lineas.length === 0 ||
-                    !terceroId ||
-                    !condicion ||
-                    (condicion === "credito" && !fechaVencimiento)
-                  }
+                  disabled={faltan.length > 0}
                   onClick={onConfirm}
                 >
                   Crear Recibo

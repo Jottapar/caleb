@@ -9,7 +9,12 @@ type Props = {
   onCancelRequest?: () => void;
 };
 
-export function ReceiptDetailDialog({ receipt, clienteNombre, onClose, onCancelRequest }: Props) {
+export function ReceiptDetailDialog({
+  receipt,
+  clienteNombre,
+  onClose,
+  onCancelRequest,
+}: Props) {
   return (
     <Dialog.Root open onOpenChange={(details) => !details.open && onClose()}>
       <Dialog.Backdrop />
@@ -44,6 +49,14 @@ export function ReceiptDetailDialog({ receipt, clienteNombre, onClose, onCancelR
                       <Table.Cell>{linea.total_linea}</Table.Cell>
                     </Table.Row>
                   ))}
+                  {receipt.lineas_fichas.map((linea) => (
+                    <Table.Row key={`ficha-${linea.id}`}>
+                      <Table.Cell>{linea.descripcion} (ficha)</Table.Cell>
+                      <Table.Cell>{linea.cantidad}</Table.Cell>
+                      <Table.Cell>{linea.precio_unitario}</Table.Cell>
+                      <Table.Cell>{linea.total_linea}</Table.Cell>
+                    </Table.Row>
+                  ))}
                 </Table.Body>
               </Table.Root>
 
@@ -59,11 +72,17 @@ export function ReceiptDetailDialog({ receipt, clienteNombre, onClose, onCancelR
               <Button variant="outline" onClick={onClose}>
                 Cerrar
               </Button>
-              {onCancelRequest && receipt.estado === "emitido" && receipt.condicion === "contado" && (
-                <Button colorPalette="red" variant="outline" onClick={onCancelRequest}>
-                  Cancelar recibo
-                </Button>
-              )}
+              {onCancelRequest &&
+                receipt.estado === "emitido" &&
+                receipt.condicion === "contado" && (
+                  <Button
+                    colorPalette="red"
+                    variant="outline"
+                    onClick={onCancelRequest}
+                  >
+                    Cancelar recibo
+                  </Button>
+                )}
             </HStack>
           </Dialog.Footer>
         </Dialog.Content>

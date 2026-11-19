@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
+import { beforeEach } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 
@@ -10,6 +11,25 @@ const RECEIPTS_URL = "/api/v1/receipts";
 const THIRD_PARTIES_URL = "/api/v1/third-parties";
 const ITEMS_URL = "/api/v1/items";
 const BANKS_URL = "/api/v1/banks";
+const SHEETS_URL = "/api/v1/technical-sheets";
+
+// La pantalla también pide las fichas técnicas. Por defecto no hay ninguna; un test que las
+// necesite declara su propio handler con server.use, que tiene prioridad sobre este.
+beforeEach(() => {
+  server.use(http.get(SHEETS_URL, () => HttpResponse.json([])));
+});
+
+const FICHA = {
+  id: 1,
+  codigo: "F-0001",
+  nombre: "Corte completo",
+  precio_venta: "25000.00",
+  impuesto_id: 1,
+  activo: true,
+  costo: "9000.00",
+  insumos: [],
+  servicios: [],
+};
 
 const CLIENTE = {
   id: 1,
@@ -60,6 +80,7 @@ const RECIBO = {
       total_linea: "10000.00",
     },
   ],
+  lineas_fichas: [],
 };
 
 function renderPage() {
@@ -359,6 +380,184 @@ it("producto y cantidad están en la misma fila, junto al botón Agregar", async
     .parentElement as HTMLElement;
   expect(within(fila).getByLabelText("Producto")).toBeInTheDocument();
   expect(within(fila).getByLabelText("Cantidad")).toBeInTheDocument();
+});
+
+it("el desplegable ofrece los productos activos que se venden y las fichas activas", async () => {
+  server.use(
+    http.get(THIRD_PARTIES_URL, () => HttpResponse.json([CLIENTE])),
+    http.get(ITEMS_URL, () =>
+      HttpResponse.json([
+        PRODUCTO,
+        { ...PRODUCTO, id: 2, nombre: "Gel", se_vende: false, es_insumo: true },
+        { ...PRODUCTO, id: 3, nombre: "Pan viejo", activo: false },
+      ]),
+    ),
+    http.get(SHEETS_URL, () =>
+      HttpResponse.json([
+        FICHA,
+        { ...FICHA, id: 2, nombre: "Ficha apagada", activo: false },
+      ]),
+    ),
+    http.get(RECEIPTS_URL, () => HttpResponse.json([])),
+    http.get(BANKS_URL, () => HttpResponse.json([])),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Crear Recibo" }));
+  const dialog = await screen.findByRole("dialog");
+  const opciones = within(await within(dialog).findByLabelText("Producto"))
+    .getAllByRole("option")
+    .map((option) => option.textContent);
+
+  // Sin el insumo que no se vende, sin el producto inactivo y sin la ficha inactiva
+  expect(opciones).toEqual(["Pan", "Corte completo (ficha F-0001)"]);
+});
+
+it("vende una ficha: la agrega al carrito y envía lineas_fichas", async () => {
+  let body: Record<string, unknown> = {};
+  server.use(
+    http.get(THIRD_PARTIES_URL, () => HttpResponse.json([CLIENTE])),
+    http.get(ITEMS_URL, () => HttpResponse.json([PRODUCTO])),
+    http.get(SHEETS_URL, () => HttpResponse.json([FICHA])),
+    http.get(RECEIPTS_URL, () => HttpResponse.json([])),
+    http.get(BANKS_URL, () => HttpResponse.json([])),
+    http.post(RECEIPTS_URL, async ({ request }) => {
+      body = (await request.json()) as Record<string, unknown>;
+      return HttpResponse.json(RECIBO, { status: 201 });
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Crear Recibo" }));
+  const dialog = await screen.findByRole("dialog");
+  await user.selectOptions(
+    within(dialog).getByLabelText("Cliente"),
+    "Cliente Uno",
+  );
+  await user.selectOptions(
+    await within(dialog).findByLabelText("Producto"),
+    "Corte completo (ficha F-0001)",
+  );
+  await user.type(within(dialog).getByLabelText("Cantidad"), "3");
+  await user.click(within(dialog).getByRole("button", { name: "Agregar" }));
+  expect(
+    within(dialog).getByRole("cell", { name: "Corte completo" }),
+  ).toBeInTheDocument();
+  await user.selectOptions(
+    within(dialog).getByLabelText(/condición/i),
+    "contado",
+  );
+  await user.click(
+    within(dialog).getByRole("button", { name: "Crear Recibo" }),
+  );
+
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+  );
+  expect(body.lineas).toEqual([]);
+  expect(body.lineas_fichas).toEqual([{ ficha_tecnica_id: 1, cantidad: "3" }]);
+});
+
+it("un producto y una ficha con el mismo id no se confunden en el carrito", async () => {
+  server.use(
+    http.get(THIRD_PARTIES_URL, () => HttpResponse.json([CLIENTE])),
+    http.get(ITEMS_URL, () => HttpResponse.json([PRODUCTO])), // id 1
+    http.get(SHEETS_URL, () => HttpResponse.json([FICHA])), // id 1
+    http.get(RECEIPTS_URL, () => HttpResponse.json([])),
+    http.get(BANKS_URL, () => HttpResponse.json([])),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Crear Recibo" }));
+  const dialog = await screen.findByRole("dialog");
+  await within(dialog).findByLabelText("Producto");
+  await user.type(within(dialog).getByLabelText("Cantidad"), "1");
+  await user.click(within(dialog).getByRole("button", { name: "Agregar" }));
+  await user.selectOptions(
+    within(dialog).getByLabelText("Producto"),
+    "Corte completo (ficha F-0001)",
+  );
+  await user.type(within(dialog).getByLabelText("Cantidad"), "1");
+  await user.click(within(dialog).getByRole("button", { name: "Agregar" }));
+
+  // Las dos líneas conviven: agregar la ficha no reemplazó al producto
+  expect(within(dialog).getByRole("cell", { name: "Pan" })).toBeInTheDocument();
+  expect(
+    within(dialog).getByRole("cell", { name: "Corte completo" }),
+  ).toBeInTheDocument();
+});
+
+it("debajo del botón dice qué falta para crear el recibo", async () => {
+  mockBase();
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Crear Recibo" }));
+  const dialog = await screen.findByRole("dialog");
+
+  expect(
+    within(dialog).getByText(
+      "Falta: elegir un cliente, elegir la condición, agregar al menos un producto o ficha técnica.",
+    ),
+  ).toBeInTheDocument();
+
+  await user.selectOptions(
+    within(dialog).getByLabelText(/cliente/i),
+    "Cliente Uno",
+  );
+  await user.selectOptions(
+    within(dialog).getByLabelText(/condición/i),
+    "credito",
+  );
+  expect(
+    within(dialog).getByText(
+      "Falta: indicar la fecha de vencimiento, agregar al menos un producto o ficha técnica.",
+    ),
+  ).toBeInTheDocument();
+
+  await user.type(within(dialog).getByLabelText(/vencimiento/i), "2026-12-01");
+  await user.type(within(dialog).getByLabelText("Cantidad"), "2");
+  await user.click(within(dialog).getByRole("button", { name: "Agregar" }));
+  // Ya no falta nada: el texto desaparece
+  expect(within(dialog).queryByText(/^Falta:/)).not.toBeInTheDocument();
+});
+
+it("el detalle del recibo muestra también las fichas vendidas", async () => {
+  server.use(
+    http.get(THIRD_PARTIES_URL, () => HttpResponse.json([CLIENTE])),
+    http.get(RECEIPTS_URL, () =>
+      HttpResponse.json([
+        {
+          ...RECIBO,
+          lineas: [],
+          lineas_fichas: [
+            {
+              id: 1,
+              ficha_tecnica_id: 1,
+              descripcion: "Corte completo",
+              cantidad: "3.0000",
+              precio_unitario: "25000.00",
+              impuesto_porcentaje: "0.00",
+              total_linea: "75000.00",
+            },
+          ],
+        },
+      ]),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: /ver/i }));
+  const dialog = await screen.findByRole("dialog");
+
+  expect(
+    within(dialog).getByText("Corte completo (ficha)"),
+  ).toBeInTheDocument();
+  expect(within(dialog).getByText("75000.00")).toBeInTheDocument();
 });
 
 it("muestra el error del backend si el servidor rechaza el recibo", async () => {

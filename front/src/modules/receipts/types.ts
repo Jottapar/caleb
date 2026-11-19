@@ -9,6 +9,17 @@ export type ReceiptItemLine = {
   total_linea: string;
 };
 
+// Una ficha técnica vendida en el recibo (recibo_lineas_fichas en el backend)
+export type ReceiptSheetLine = {
+  id: number;
+  ficha_tecnica_id: number;
+  descripcion: string;
+  cantidad: string;
+  precio_unitario: string;
+  impuesto_porcentaje: string;
+  total_linea: string;
+};
+
 export type Receipt = {
   id: number;
   tercero_id: number;
@@ -23,10 +34,14 @@ export type Receipt = {
   notas: string;
   saldo: string;
   lineas: ReceiptItemLine[];
+  lineas_fichas: ReceiptSheetLine[];
 };
 
+// Una línea del carrito: un producto o una ficha técnica. El tipo (`kind`) hace falta porque un
+// producto y una ficha pueden tener el mismo id.
 export type ReceiptCartLine = {
-  itemId: number;
+  kind: "item" | "sheet";
+  id: number;
   nombre: string;
   cantidad: string;
 };
