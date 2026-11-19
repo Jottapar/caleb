@@ -516,3 +516,20 @@ def test_can_deactivate_item_that_no_sheet_uses(logged_in_client, session):
     response = _desactivar_item(logged_in_client, gel.id)
 
     assert response.status_code == 200
+
+
+def test_sheet_code_does_not_repeat_after_deleting_one_from_the_middle(logged_in_client, session):
+    corte = _servicio(session)
+    linea = [{"servicio_id": corte.id}]
+    creadas = [
+        _post(logged_in_client, session, nombre=nombre, servicios=linea).json()
+        for nombre in ("A", "B", "C")
+    ]
+    assert [c["codigo"] for c in creadas] == ["F-0001", "F-0002", "F-0003"]
+    logged_in_client.delete(
+        f"{URL}/{creadas[0]['id']}", headers=_csrf_headers(logged_in_client)
+    )
+
+    nueva = _post(logged_in_client, session, nombre="D", servicios=linea).json()
+
+    assert nueva["codigo"] == "F-0004"

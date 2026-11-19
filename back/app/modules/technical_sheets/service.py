@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from sqlmodel import Session, select
 
+from app.core.codes import next_code
 from app.core.errors import BusinessError, NotFoundError
 from app.core.logger import logger
 from app.modules.items.models import Item
@@ -70,10 +71,7 @@ def _validate_services(
 
 
 def _generate_code(session: Session, empresa_id: int) -> str:
-    total = session.exec(
-        select(TechnicalSheet).where(TechnicalSheet.empresa_id == empresa_id)
-    ).all()
-    return f"F-{len(total) + 1:04d}"
+    return next_code(session, TechnicalSheet, empresa_id, "F")
 
 
 def _to_read(session: Session, sheet: TechnicalSheet) -> TechnicalSheetRead:

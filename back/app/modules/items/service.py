@@ -3,6 +3,7 @@ from decimal import Decimal
 from sqlalchemy import case, func
 from sqlmodel import Session, select
 
+from app.core.codes import next_code
 from app.core.errors import BusinessError, NotFoundError
 from app.modules.items.models import InventoryMovement, Item
 from app.modules.items.schemas import ItemRead, ItemUpdate, StockMovementLine
@@ -26,8 +27,7 @@ def _validate_tax(session: Session, impuesto_id: int, empresa_id: int) -> None:
 
 
 def _generate_code(session: Session, empresa_id: int) -> str:
-    total = session.exec(select(Item).where(Item.empresa_id == empresa_id)).all()
-    return f"P-{len(total) + 1:04d}"
+    return next_code(session, Item, empresa_id, "P")
 
 
 def _validate_code(

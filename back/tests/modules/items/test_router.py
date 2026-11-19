@@ -608,3 +608,40 @@ def test_update_item_rejects_leaving_both_marks_false(logged_in_client, session)
 
     assert response.status_code == 422
     assert response.json()["error"] == "business_error"
+
+
+def test_create_item_code_does_not_repeat_after_deleting_one_from_the_middle(
+    logged_in_client, session
+):
+    impuesto_id = _sin_impuesto_id(session)
+    creados = [
+        logged_in_client.post(
+            URL,
+            json={"nombre": nombre, "impuesto_id": impuesto_id},
+            headers=_csrf_headers(logged_in_client),
+        ).json()
+        for nombre in ("A", "B", "C")
+    ]
+    assert [c["codigo"] for c in creados] == ["P-0001", "P-0002", "P-0003"]
+    logged_in_client.delete(f"{URL}/{creados[0]['id']}", headers=_csrf_headers(logged_in_client))
+
+    nuevo = logged_in_client.post(
+        URL, json={"nombre": "D", "impuesto_id": impuesto_id}, headers=_csrf_headers(logged_in_client)
+    ).json()
+
+    assert nuevo["codigo"] == "P-0004"
+
+
+def test_create_item_code_ignores_codes_written_by_hand(logged_in_client, session):
+    impuesto_id = _sin_impuesto_id(session)
+    logged_in_client.post(
+        URL,
+        json={"nombre": "Harina", "impuesto_id": impuesto_id, "codigo": "HAR-001"},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    nuevo = logged_in_client.post(
+        URL, json={"nombre": "Pan", "impuesto_id": impuesto_id}, headers=_csrf_headers(logged_in_client)
+    ).json()
+
+    assert nuevo["codigo"] == "P-0001"

@@ -1,5 +1,6 @@
 from sqlmodel import Session, select
 
+from app.core.codes import next_code
 from app.core.errors import BusinessError
 from app.core.logger import logger
 from app.modules.services.models import Service
@@ -7,8 +8,7 @@ from app.modules.services.schemas import ServiceCreate
 
 
 def _generate_code(session: Session, empresa_id: int) -> str:
-    total = session.exec(select(Service).where(Service.empresa_id == empresa_id)).all()
-    return f"S-{len(total) + 1:04d}"
+    return next_code(session, Service, empresa_id, "S")
 
 
 def create_service(session: Session, empresa_id: int, data: ServiceCreate) -> Service:
