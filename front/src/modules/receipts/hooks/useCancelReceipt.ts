@@ -8,7 +8,9 @@ export function useCancelReceipt() {
 
   return useMutation({
     mutationFn: (receiptId: number) =>
-      api.post<Receipt>(`/receipts/${receiptId}/cancel`).then((response) => response.data),
+      api
+        .post<Receipt>(`/receipts/${receiptId}/cancel`)
+        .then((response) => response.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["receipts"] });
       // la cancelacion revierte el inventario descontado

@@ -7,6 +7,8 @@ export function useAccountsReceivable() {
   return useQuery({
     queryKey: ["receipts", "accounts-receivable"],
     queryFn: () =>
-      api.get<Receipt[]>("/receipts/accounts-receivable").then((response) => response.data),
+      api
+        .get<Receipt[]>("/receipts/accounts-receivable")
+        .then((response) => response.data),
   });
 }
