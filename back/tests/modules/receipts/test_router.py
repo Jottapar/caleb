@@ -775,3 +775,62 @@ def test_cannot_delete_a_sheet_that_is_in_a_receipt_even_if_canceled(logged_in_c
     assert en_recibo.status_code == 422
     assert "recibo" in en_recibo.json()["message"]
     assert anulado.status_code == 422
+
+
+def _credit_receipt(logged_in_client, session, cantidad="3") -> dict:
+    cliente_id = _create_cliente(logged_in_client)
+    item = _create_item(logged_in_client, session, cantidad_inicial="10")
+    return logged_in_client.post(
+        URL,
+        json={
+            "tercero_id": cliente_id,
+            "condicion": "credito",
+            "fecha_vencimiento": "2026-12-01",
+            "lineas": [{"item_id": item["id"], "cantidad": cantidad}],
+        },
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+
+
+def test_cancel_credit_receipt_reverts_stock_and_leaves_accounts_receivable(
+    logged_in_client, session
+):
+    recibo = _credit_receipt(logged_in_client, session)
+    assert [r["id"] for r in logged_in_client.get(f"{URL}/accounts-receivable").json()] == [
+        recibo["id"]
+    ]
+
+    response = logged_in_client.post(
+        f"{URL}/{recibo['id']}/cancel", headers=_csrf_headers(logged_in_client)
+    )
+
+    assert response.status_code == 200
+    assert response.json()["estado"] == "anulado"
+    existencias = {p["nombre"]: p["existencias"] for p in logged_in_client.get(ITEMS_URL).json()}
+    assert existencias["Pan"] == "10.0000"
+    # Un recibo anulado deja de ser una cuenta por cobrar
+    assert logged_in_client.get(f"{URL}/accounts-receivable").json() == []
+
+
+def test_cancel_credit_receipt_cancels_every_payment(logged_in_client, session):
+    recibo = _credit_receipt(logged_in_client, session)
+    empresa_id = session.exec(select(Company)).first().id
+    # Todavia no hay abonos en la API (historia 6): se crean directo para probar la regla
+    for monto in ("5000", "2000"):
+        session.add(
+            AccountReceivablePayment(
+                empresa_id=empresa_id,
+                recibo_id=recibo["id"],
+                monto=Decimal(monto),
+                fecha=date.today(),
+            )
+        )
+    session.flush()
+
+    logged_in_client.post(f"{URL}/{recibo['id']}/cancel", headers=_csrf_headers(logged_in_client))
+
+    pagos = session.exec(
+        select(AccountReceivablePayment).where(AccountReceivablePayment.recibo_id == recibo["id"])
+    ).all()
+    assert len(pagos) == 2  # no se borran
+    assert {pago.estado for pago in pagos} == {"anulado"}

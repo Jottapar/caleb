@@ -309,10 +309,11 @@ def cancel_receipt(session: Session, receipt_id: int, empresa_id: int) -> Receip
             )
         )
 
-    pago = session.exec(
+    # Todos los pagos del recibo se anulan, no se borran: el de contado, o los abonos si es a credito
+    pagos = session.exec(
         select(AccountReceivablePayment).where(AccountReceivablePayment.recibo_id == receipt.id)
-    ).first()
-    if pago:
+    ).all()
+    for pago in pagos:
         pago.estado = "anulado"
         session.add(pago)
 
