@@ -9,9 +9,16 @@ class ReceiptItemLineCreate(SQLModel):
     cantidad: Decimal
 
 
+class ReceiptSheetLineCreate(SQLModel):
+    ficha_tecnica_id: int
+    cantidad: Decimal
+
+
 class ReceiptCreate(SQLModel):
     tercero_id: int
-    lineas: list[ReceiptItemLineCreate]
+    # Un recibo necesita al menos una linea, de producto o de ficha (lo valida el servicio)
+    lineas: list[ReceiptItemLineCreate] = []
+    lineas_fichas: list[ReceiptSheetLineCreate] = []
     condicion: str = "contado"
     fecha_vencimiento: date | None = None
     notas: str = ""
@@ -20,6 +27,16 @@ class ReceiptCreate(SQLModel):
 class ReceiptItemLineRead(SQLModel):
     id: int
     item_id: int
+    descripcion: str
+    cantidad: Decimal
+    precio_unitario: Decimal
+    impuesto_porcentaje: Decimal
+    total_linea: Decimal
+
+
+class ReceiptSheetLineRead(SQLModel):
+    id: int
+    ficha_tecnica_id: int
     descripcion: str
     cantidad: Decimal
     precio_unitario: Decimal
@@ -41,3 +58,4 @@ class ReceiptRead(SQLModel):
     notas: str
     saldo: Decimal
     lineas: list[ReceiptItemLineRead]
+    lineas_fichas: list[ReceiptSheetLineRead]

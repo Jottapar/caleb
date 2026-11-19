@@ -6,9 +6,19 @@ from sqlmodel import Session, select
 from app.core.errors import BusinessError, NotFoundError
 from app.modules.items import service as items_service
 from app.modules.items.models import InventoryMovement, Item
-from app.modules.receipts.models import AccountReceivablePayment, Receipt, ReceiptItemLine
-from app.modules.receipts.schemas import ReceiptItemLineCreate, ReceiptRead
+from app.modules.receipts.models import (
+    AccountReceivablePayment,
+    Receipt,
+    ReceiptItemLine,
+    ReceiptSheetLine,
+)
+from app.modules.receipts.schemas import (
+    ReceiptItemLineCreate,
+    ReceiptRead,
+    ReceiptSheetLineCreate,
+)
 from app.modules.taxes.models import Tax
+from app.modules.technical_sheets.models import TechnicalSheet, TechnicalSheetItemLine
 from app.modules.third_parties.models import ThirdParty
 
 TERCEROS_VALIDOS_EN_RECIBO = {"cliente", "ambos"}
@@ -41,7 +51,7 @@ def _validate_condicion(condicion: str, fecha_vencimiento: date | None) -> None:
         raise BusinessError("La fecha de vencimiento es obligatoria en un recibo a credito")
 
 
-def _get_item_for_line(session: Session, item_id: int, empresa_id: int, cantidad: Decimal) -> Item:
+def _get_item_for_line(session: Session, item_id: int, empresa_id: int) -> Item:
     item = session.exec(
         select(Item).where(Item.id == item_id, Item.empresa_id == empresa_id)
     ).first()
@@ -49,9 +59,30 @@ def _get_item_for_line(session: Session, item_id: int, empresa_id: int, cantidad
         raise NotFoundError("Producto", item_id)
     if not item.se_vende:
         raise BusinessError(f"El producto {item.nombre} no esta marcado para venderse")
-    if items_service.get_stock(session, item.id) < cantidad:
-        raise BusinessError(f"No hay existencias suficientes de {item.nombre}")
+    if not item.activo:
+        raise BusinessError(f"El producto {item.nombre} esta inactivo")
     return item
+
+
+def _get_sheet_for_line(session: Session, sheet_id: int, empresa_id: int) -> TechnicalSheet:
+    sheet = session.exec(
+        select(TechnicalSheet).where(
+            TechnicalSheet.id == sheet_id, TechnicalSheet.empresa_id == empresa_id
+        )
+    ).first()
+    if not sheet:
+        raise NotFoundError("Ficha tecnica", sheet_id)
+    if not sheet.activo:
+        raise BusinessError(f"La ficha tecnica {sheet.nombre} esta inactiva")
+    return sheet
+
+
+def _validate_stock(session: Session, demanda: dict[int, Decimal]) -> None:
+    """`demanda` es item_id -> cuanto necesita TODO el recibo de ese item (suelto + insumos)."""
+    for item_id, necesario in demanda.items():
+        if items_service.get_stock(session, item_id) < necesario:
+            item = session.get(Item, item_id)
+            raise BusinessError(f"No hay existencias suficientes de {item.nombre}")
 
 
 def create_receipt(
@@ -59,24 +90,49 @@ def create_receipt(
     empresa_id: int,
     tercero_id: int,
     lineas: list[ReceiptItemLineCreate],
+    lineas_fichas: list[ReceiptSheetLineCreate] | None = None,
     condicion: str = "contado",
     fecha_vencimiento: date | None = None,
     notas: str = "",
 ) -> ReceiptRead:
-    if not lineas:
+    lineas_fichas = lineas_fichas or []
+    if not lineas and not lineas_fichas:
         raise BusinessError("El recibo debe tener al menos una linea")
 
     _validate_condicion(condicion, fecha_vencimiento)
     _validate_third_party(session, tercero_id, empresa_id)
     numero = _generate_numero(session, empresa_id)
 
+    # Primero se valida y se junta todo, sin escribir nada: si algo falla, no queda nada a medias.
+    # `demanda` suma lo que necesita TODO el recibo de cada item: el suelto y los insumos de fichas.
+    demanda: dict[int, Decimal] = {}
+
     items_by_line = []
     for linea in lineas:
         if linea.cantidad <= 0:
             raise BusinessError("La cantidad de cada linea debe ser mayor a cero")
-        item = _get_item_for_line(session, linea.item_id, empresa_id, linea.cantidad)
+        item = _get_item_for_line(session, linea.item_id, empresa_id)
         tax = session.get(Tax, item.impuesto_id)
         items_by_line.append((linea, item, tax))
+        demanda[item.id] = demanda.get(item.id, Decimal(0)) + linea.cantidad
+
+    sheets_by_line = []
+    for linea in lineas_fichas:
+        if linea.cantidad <= 0:
+            raise BusinessError("La cantidad de cada linea debe ser mayor a cero")
+        sheet = _get_sheet_for_line(session, linea.ficha_tecnica_id, empresa_id)
+        tax = session.get(Tax, sheet.impuesto_id)
+        insumos = session.exec(
+            select(TechnicalSheetItemLine, Item)
+            .join(Item, Item.id == TechnicalSheetItemLine.item_id)
+            .where(TechnicalSheetItemLine.ficha_tecnica_id == sheet.id)
+        ).all()
+        sheets_by_line.append((linea, sheet, tax, insumos))
+        for insumo, item in insumos:
+            necesario = insumo.cantidad * linea.cantidad
+            demanda[item.id] = demanda.get(item.id, Decimal(0)) + necesario
+
+    _validate_stock(session, demanda)
 
     fecha = date.today()
     receipt = Receipt(
@@ -122,6 +178,37 @@ def create_receipt(
         subtotal += total_linea
         impuestos_total += impuesto_linea
 
+    for linea, sheet, tax, insumos in sheets_by_line:
+        total_linea = _round(linea.cantidad * sheet.precio_venta)
+        impuesto_linea = _round(total_linea * tax.porcentaje / 100)
+        session.add(
+            ReceiptSheetLine(
+                recibo_id=receipt.id,
+                ficha_tecnica_id=sheet.id,
+                descripcion=sheet.nombre,
+                cantidad=linea.cantidad,
+                precio_unitario=sheet.precio_venta,
+                impuesto_porcentaje=tax.porcentaje,
+                total_linea=total_linea,
+            )
+        )
+        # Una salida por cada insumo de la ficha, con el costo del insumo en este momento.
+        # Los servicios de la ficha no mueven inventario.
+        for insumo, item in insumos:
+            session.add(
+                InventoryMovement(
+                    empresa_id=empresa_id,
+                    item_id=item.id,
+                    tipo="salida",
+                    cantidad=insumo.cantidad * linea.cantidad,
+                    costo_unitario=item.costo,
+                    origen="recibo",
+                    origen_id=receipt.id,
+                )
+            )
+        subtotal += total_linea
+        impuestos_total += impuesto_linea
+
     receipt.subtotal = subtotal
     receipt.impuestos_total = impuestos_total
     receipt.total = subtotal + impuestos_total
@@ -156,8 +243,14 @@ def _with_lines(session: Session, receipt: Receipt) -> ReceiptRead:
     lineas = session.exec(
         select(ReceiptItemLine).where(ReceiptItemLine.recibo_id == receipt.id)
     ).all()
+    lineas_fichas = session.exec(
+        select(ReceiptSheetLine).where(ReceiptSheetLine.recibo_id == receipt.id)
+    ).all()
     return ReceiptRead(
-        **receipt.model_dump(), saldo=get_balance(session, receipt), lineas=list(lineas)
+        **receipt.model_dump(),
+        saldo=get_balance(session, receipt),
+        lineas=list(lineas),
+        lineas_fichas=list(lineas_fichas),
     )
 
 
@@ -193,16 +286,24 @@ def cancel_receipt(session: Session, receipt_id: int, empresa_id: int) -> Receip
     if receipt.estado != "emitido":
         raise BusinessError("Solo se puede cancelar un recibo emitido")
 
-    lineas = session.exec(
-        select(ReceiptItemLine).where(ReceiptItemLine.recibo_id == receipt.id)
+    # Se revierte cada salida que el recibo creo (items vendidos e insumos de fichas), con la
+    # misma cantidad y costo: lo que realmente se descontó, no lo que hoy diga la ficha.
+    salidas = session.exec(
+        select(InventoryMovement).where(
+            InventoryMovement.empresa_id == empresa_id,
+            InventoryMovement.origen == "recibo",
+            InventoryMovement.origen_id == receipt.id,
+            InventoryMovement.tipo == "salida",
+        )
     ).all()
-    for linea in lineas:
+    for salida in salidas:
         session.add(
             InventoryMovement(
                 empresa_id=empresa_id,
-                item_id=linea.item_id,
+                item_id=salida.item_id,
                 tipo="entrada",
-                cantidad=linea.cantidad,
+                cantidad=salida.cantidad,
+                costo_unitario=salida.costo_unitario,
                 origen="recibo",
                 origen_id=receipt.id,
             )

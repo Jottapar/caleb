@@ -20,6 +20,7 @@ def create_receipt(data: ReceiptCreate, session: SessionDep, empresa_id: Current
         empresa_id=empresa_id,
         tercero_id=data.tercero_id,
         lineas=data.lineas,
+        lineas_fichas=data.lineas_fichas,
         condicion=data.condicion,
         fecha_vencimiento=data.fecha_vencimiento,
         notas=data.notas,

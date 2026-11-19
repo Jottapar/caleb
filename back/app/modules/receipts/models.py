@@ -44,6 +44,24 @@ class ReceiptItemLine(SQLModel, table=True):
     total_linea: Decimal = Field(sa_type=Numeric(14, 2))
 
 
+class ReceiptSheetLine(SQLModel, table=True):
+    """Una ficha tecnica vendida en un recibo. Copia nombre, precio e impuesto al vender.
+
+    Tabla aparte de `recibo_lineas_items` para no dejar `item_id` o `ficha_tecnica_id` vacios.
+    """
+
+    __tablename__ = "recibo_lineas_fichas"
+
+    id: int | None = Field(default=None, primary_key=True)
+    recibo_id: int = Field(foreign_key="recibos.id")
+    ficha_tecnica_id: int = Field(foreign_key="fichas_tecnicas.id")
+    descripcion: str = Field(max_length=150)
+    cantidad: Decimal = Field(sa_type=Numeric(14, 4))
+    precio_unitario: Decimal = Field(sa_type=Numeric(14, 2))
+    impuesto_porcentaje: Decimal = Field(sa_type=Numeric(5, 2))
+    total_linea: Decimal = Field(sa_type=Numeric(14, 2))
+
+
 class AccountReceivablePayment(SQLModel, table=True):
     """Un abono a un recibo. La deuda no se guarda: es `recibos.total` menos la suma de estos."""
 

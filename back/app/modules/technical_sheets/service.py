@@ -6,6 +6,7 @@ from app.core.codes import next_code
 from app.core.errors import BusinessError, NotFoundError
 from app.core.logger import logger
 from app.modules.items.models import Item
+from app.modules.receipts.models import ReceiptSheetLine
 from app.modules.services.models import Service
 from app.modules.taxes.models import Tax
 from app.modules.technical_sheets.models import (
@@ -251,8 +252,12 @@ def set_active(
 
 def delete_technical_sheet(session: Session, sheet_id: int, empresa_id: int) -> None:
     sheet = get_by_id(session, sheet_id, empresa_id)
-    # TODO(recibo de fichas): cuando exista recibo_lineas_fichas, rechazar aqui si la ficha
-    # ya esta en un recibo (ver 02. Reglas del Negocio). Hoy ningun recibo usa fichas.
+    # Una ficha que aparece en cualquier recibo (aunque este anulado) tiene historia: no se borra.
+    en_recibo = session.exec(
+        select(ReceiptSheetLine.id).where(ReceiptSheetLine.ficha_tecnica_id == sheet.id).limit(1)
+    ).first()
+    if en_recibo:
+        raise BusinessError("No se puede eliminar una ficha tecnica que ya esta en un recibo")
 
     # Las lineas dependen de la ficha por llave foranea: se borran primero, en el mismo commit.
     for linea in session.exec(
