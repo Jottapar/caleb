@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 
@@ -9,14 +9,16 @@ import { ReceiptsPage } from "./ReceiptsPage";
 const RECEIPTS_URL = "/api/v1/receipts";
 const THIRD_PARTIES_URL = "/api/v1/third-parties";
 const ITEMS_URL = "/api/v1/items";
+const BANKS_URL = "/api/v1/banks";
 
 const CLIENTE = {
   id: 1,
   tipo: "cliente",
   nombre: "Cliente Uno",
-  documento: "",
-  email: "",
-  telefono: "",
+  documento: "900123456",
+  email: "uno@correo.com",
+  telefono: "3001234567",
+  direccion: "Calle 1 # 2-3",
   activo: true,
 };
 
@@ -69,7 +71,9 @@ it("muestra un mensaje cuando no hay recibos registrados todavía", async () => 
 
   renderPage();
 
-  expect(await screen.findByText(/no tienes recibos emitidos/i)).toBeInTheDocument();
+  expect(
+    await screen.findByText(/no tienes recibos emitidos/i),
+  ).toBeInTheDocument();
 });
 
 it("crea un recibo eligiendo un cliente y agregando un producto al carrito", async () => {
@@ -104,11 +108,20 @@ it("crea un recibo eligiendo un cliente y agregando un producto al carrito", asy
   renderPage();
   await user.click(await screen.findByRole("button", { name: "Crear Recibo" }));
   const dialog = await screen.findByRole("dialog");
-  await user.selectOptions(within(dialog).getByLabelText(/cliente/i), "Cliente Uno");
+  await user.selectOptions(
+    within(dialog).getByLabelText(/cliente/i),
+    "Cliente Uno",
+  );
   await user.selectOptions(within(dialog).getByLabelText(/producto/i), "Pan");
   await user.type(within(dialog).getByLabelText(/cantidad/i), "2");
   await user.click(within(dialog).getByRole("button", { name: "Agregar" }));
-  await user.click(within(dialog).getByRole("button", { name: "Crear Recibo" }));
+  await user.selectOptions(
+    within(dialog).getByLabelText(/condición/i),
+    "contado",
+  );
+  await user.click(
+    within(dialog).getByRole("button", { name: "Crear Recibo" }),
+  );
 
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(await screen.findByText("R-0001")).toBeInTheDocument();
@@ -126,8 +139,13 @@ it("muestra el campo de vencimiento solo cuando elijo crédito en el desplegable
   await user.click(await screen.findByRole("button", { name: "Crear Recibo" }));
   const dialog = await screen.findByRole("dialog");
 
-  expect(within(dialog).queryByLabelText(/vencimiento/i)).not.toBeInTheDocument();
-  await user.selectOptions(within(dialog).getByLabelText(/condición/i), "credito");
+  expect(
+    within(dialog).queryByLabelText(/vencimiento/i),
+  ).not.toBeInTheDocument();
+  await user.selectOptions(
+    within(dialog).getByLabelText(/condición/i),
+    "credito",
+  );
 
   expect(within(dialog).getByLabelText(/vencimiento/i)).toBeInTheDocument();
 });
@@ -140,7 +158,10 @@ it("crea un recibo a crédito con su fecha de vencimiento", async () => {
     http.get(RECEIPTS_URL, () => HttpResponse.json([])),
     http.post(RECEIPTS_URL, async ({ request }) => {
       body = (await request.json()) as Record<string, unknown>;
-      return HttpResponse.json({ ...RECIBO, condicion: "credito" }, { status: 201 });
+      return HttpResponse.json(
+        { ...RECIBO, condicion: "credito" },
+        { status: 201 },
+      );
     }),
   );
   const user = userEvent.setup();
@@ -148,12 +169,21 @@ it("crea un recibo a crédito con su fecha de vencimiento", async () => {
   renderPage();
   await user.click(await screen.findByRole("button", { name: "Crear Recibo" }));
   const dialog = await screen.findByRole("dialog");
+  await user.selectOptions(
+    within(dialog).getByLabelText(/cliente/i),
+    "Cliente Uno",
+  );
   await user.selectOptions(within(dialog).getByLabelText(/producto/i), "Pan");
   await user.type(within(dialog).getByLabelText(/cantidad/i), "2");
   await user.click(within(dialog).getByRole("button", { name: "Agregar" }));
-  await user.selectOptions(within(dialog).getByLabelText(/condición/i), "credito");
+  await user.selectOptions(
+    within(dialog).getByLabelText(/condición/i),
+    "credito",
+  );
   await user.type(within(dialog).getByLabelText(/vencimiento/i), "2026-12-01");
-  await user.click(within(dialog).getByRole("button", { name: "Crear Recibo" }));
+  await user.click(
+    within(dialog).getByRole("button", { name: "Crear Recibo" }),
+  );
 
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(body.condicion).toBe("credito");
@@ -176,7 +206,159 @@ it("quita una línea del carrito antes de confirmar", async () => {
   await user.click(within(dialog).getByRole("button", { name: "Agregar" }));
   await user.click(within(dialog).getByRole("button", { name: /quitar/i }));
 
-  expect(within(dialog).queryByRole("cell", { name: "Pan" })).not.toBeInTheDocument();
+  expect(
+    within(dialog).queryByRole("cell", { name: "Pan" }),
+  ).not.toBeInTheDocument();
+});
+
+function mockBase(extra: ReturnType<typeof http.get>[] = []) {
+  server.use(
+    http.get(THIRD_PARTIES_URL, () => HttpResponse.json([CLIENTE])),
+    http.get(ITEMS_URL, () => HttpResponse.json([PRODUCTO])),
+    http.get(RECEIPTS_URL, () => HttpResponse.json([])),
+    http.get(BANKS_URL, () => HttpResponse.json([])),
+    ...extra,
+  );
+}
+
+it("el cliente y la condición empiezan vacíos y sin ellos no se puede crear el recibo", async () => {
+  mockBase();
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Crear Recibo" }));
+  const dialog = await screen.findByRole("dialog");
+
+  expect(within(dialog).getByLabelText(/cliente/i)).toHaveValue("");
+  expect(within(dialog).getByLabelText(/condición/i)).toHaveValue("");
+  await user.type(within(dialog).getByLabelText(/cantidad/i), "2");
+  await user.click(within(dialog).getByRole("button", { name: "Agregar" }));
+  const crear = within(dialog).getByRole("button", { name: "Crear Recibo" });
+  expect(crear).toBeDisabled();
+
+  // Con cliente pero sin condición, sigue deshabilitado
+  await user.selectOptions(
+    within(dialog).getByLabelText(/cliente/i),
+    "Cliente Uno",
+  );
+  expect(crear).toBeDisabled();
+  await user.selectOptions(
+    within(dialog).getByLabelText(/condición/i),
+    "contado",
+  );
+  expect(crear).toBeEnabled();
+});
+
+it("al elegir un cliente muestra su documento, correo, teléfono y dirección", async () => {
+  mockBase();
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Crear Recibo" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(within(dialog).queryByText(/900123456/)).not.toBeInTheDocument();
+  await user.selectOptions(
+    within(dialog).getByLabelText(/cliente/i),
+    "Cliente Uno",
+  );
+
+  expect(within(dialog).getByText(/900123456/)).toBeInTheDocument();
+  expect(within(dialog).getByText(/uno@correo\.com/)).toBeInTheDocument();
+  expect(within(dialog).getByText(/3001234567/)).toBeInTheDocument();
+  expect(within(dialog).getByText(/Calle 1 # 2-3/)).toBeInTheDocument();
+});
+
+it("crea un cliente desde el recibo con el mismo formulario y queda elegido", async () => {
+  let terceros: unknown[] = [CLIENTE];
+  let enviado: Record<string, unknown> = {};
+  const NUEVO = {
+    id: 2,
+    tipo: "cliente",
+    nombre: "Cliente Nuevo",
+    documento: "800111222",
+    email: "nuevo@correo.com",
+    telefono: "3109876543",
+    direccion: "Carrera 4 # 5-6",
+    activo: true,
+    cuenta_bancaria: null,
+  };
+  server.use(
+    http.get(THIRD_PARTIES_URL, () => HttpResponse.json(terceros)),
+    http.post(THIRD_PARTIES_URL, async ({ request }) => {
+      enviado = (await request.json()) as Record<string, unknown>;
+      terceros = [CLIENTE, NUEVO];
+      return HttpResponse.json(NUEVO, { status: 201 });
+    }),
+    http.get(ITEMS_URL, () => HttpResponse.json([PRODUCTO])),
+    http.get(RECEIPTS_URL, () => HttpResponse.json([])),
+    http.get(BANKS_URL, () => HttpResponse.json([])),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Crear Recibo" }));
+  const dialog = await screen.findByRole("dialog", { name: "Crear Recibo" });
+  await user.click(
+    within(dialog).getByRole("button", { name: "Crear cliente" }),
+  );
+  const clienteDialog = await screen.findByRole("dialog", {
+    name: "Crear cliente",
+  });
+
+  // Solo cliente o ambos: un proveedor no iría en un recibo
+  const tipos = within(within(clienteDialog).getByLabelText("Tipo"))
+    .getAllByRole("option")
+    .map((option) => option.textContent);
+  expect(tipos).toEqual(["Cliente", "Ambos"]);
+
+  await user.type(
+    within(clienteDialog).getByLabelText("Nombre"),
+    "Cliente Nuevo",
+  );
+  await user.type(
+    within(clienteDialog).getByLabelText("Documento"),
+    "800111222",
+  );
+  await user.type(
+    within(clienteDialog).getByLabelText("Correo"),
+    "nuevo@correo.com",
+  );
+  await user.type(
+    within(clienteDialog).getByLabelText("Teléfono"),
+    "3109876543",
+  );
+  await user.type(
+    within(clienteDialog).getByLabelText("Dirección"),
+    "Carrera 4 # 5-6",
+  );
+  await user.click(
+    within(clienteDialog).getByRole("button", { name: "Guardar" }),
+  );
+
+  // El cliente creado queda elegido en el recibo y se ven sus datos
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("dialog", { name: "Crear cliente" }),
+    ).not.toBeInTheDocument(),
+  );
+  expect(enviado).toMatchObject({ tipo: "cliente", nombre: "Cliente Nuevo" });
+  expect(within(dialog).getByLabelText("Cliente")).toHaveValue("2");
+  expect(within(dialog).getByText(/800111222/)).toBeInTheDocument();
+});
+
+it("producto y cantidad están en la misma fila, junto al botón Agregar", async () => {
+  mockBase();
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Crear Recibo" }));
+  const dialog = await screen.findByRole("dialog");
+
+  // La fila que contiene el botón Agregar contiene también Producto y Cantidad
+  const fila = within(dialog).getByRole("button", { name: "Agregar" })
+    .parentElement as HTMLElement;
+  expect(within(fila).getByLabelText("Producto")).toBeInTheDocument();
+  expect(within(fila).getByLabelText("Cantidad")).toBeInTheDocument();
 });
 
 it("muestra el error del backend si el servidor rechaza el recibo", async () => {
@@ -186,7 +368,10 @@ it("muestra el error del backend si el servidor rechaza el recibo", async () => 
     http.get(RECEIPTS_URL, () => HttpResponse.json([])),
     http.post(RECEIPTS_URL, () =>
       HttpResponse.json(
-        { error: "business_error", message: "No hay existencias suficientes de Pan" },
+        {
+          error: "business_error",
+          message: "No hay existencias suficientes de Pan",
+        },
         { status: 422 },
       ),
     ),
@@ -197,9 +382,19 @@ it("muestra el error del backend si el servidor rechaza el recibo", async () => 
   await user.click(await screen.findByRole("button", { name: "Crear Recibo" }));
   const dialog = await screen.findByRole("dialog");
   await user.selectOptions(within(dialog).getByLabelText(/producto/i), "Pan");
+  await user.selectOptions(
+    within(dialog).getByLabelText(/cliente/i),
+    "Cliente Uno",
+  );
   await user.type(within(dialog).getByLabelText(/cantidad/i), "20");
   await user.click(within(dialog).getByRole("button", { name: "Agregar" }));
-  await user.click(within(dialog).getByRole("button", { name: "Crear Recibo" }));
+  await user.selectOptions(
+    within(dialog).getByLabelText(/condición/i),
+    "contado",
+  );
+  await user.click(
+    within(dialog).getByRole("button", { name: "Crear Recibo" }),
+  );
 
   expect(
     await within(dialog).findByText("No hay existencias suficientes de Pan"),
@@ -235,8 +430,12 @@ it("muestra el detalle completo de un recibo al hacer clic en Ver", async () => 
   expect(within(dialog).getByText(/Cliente Uno/)).toBeInTheDocument();
   expect(within(dialog).getByText(/2026-11-11/)).toBeInTheDocument();
   expect(within(dialog).getByRole("cell", { name: "Pan" })).toBeInTheDocument();
-  expect(within(dialog).getByRole("cell", { name: "2.0000" })).toBeInTheDocument();
-  expect(within(dialog).getByRole("cell", { name: "5000.00" })).toBeInTheDocument();
+  expect(
+    within(dialog).getByRole("cell", { name: "2.0000" }),
+  ).toBeInTheDocument();
+  expect(
+    within(dialog).getByRole("cell", { name: "5000.00" }),
+  ).toBeInTheDocument();
   expect(within(dialog).getByText("10000.00")).toBeInTheDocument();
 });
 
@@ -272,9 +471,13 @@ it("cancela un recibo desde el detalle tras confirmar", async () => {
   renderPage();
   await user.click(await screen.findByRole("button", { name: "Ver" }));
   const dialog = await screen.findByRole("dialog");
-  await user.click(within(dialog).getByRole("button", { name: "Cancelar recibo" }));
+  await user.click(
+    within(dialog).getByRole("button", { name: "Cancelar recibo" }),
+  );
   const confirmDialog = await screen.findByRole("alertdialog");
-  await user.click(within(confirmDialog).getByRole("button", { name: "Cancelar recibo" }));
+  await user.click(
+    within(confirmDialog).getByRole("button", { name: "Cancelar recibo" }),
+  );
 
   expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   expect(await screen.findByText("anulado")).toBeInTheDocument();
@@ -291,9 +494,13 @@ it("no cancela el recibo si cierro el diálogo de confirmación sin confirmar", 
   renderPage();
   await user.click(await screen.findByRole("button", { name: "Ver" }));
   const dialog = await screen.findByRole("dialog");
-  await user.click(within(dialog).getByRole("button", { name: "Cancelar recibo" }));
+  await user.click(
+    within(dialog).getByRole("button", { name: "Cancelar recibo" }),
+  );
   const confirmDialog = await screen.findByRole("alertdialog");
-  await user.click(within(confirmDialog).getByRole("button", { name: "Cancelar" }));
+  await user.click(
+    within(confirmDialog).getByRole("button", { name: "Cancelar" }),
+  );
 
   expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   expect(screen.getByText("emitido")).toBeInTheDocument();

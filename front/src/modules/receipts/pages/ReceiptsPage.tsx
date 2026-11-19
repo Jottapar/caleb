@@ -31,7 +31,7 @@ export function ReceiptsPage() {
   const cancelReceipt = useCancelReceipt();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [terceroId, setTerceroId] = useState("");
-  const [condicion, setCondicion] = useState("contado");
+  const [condicion, setCondicion] = useState("");
   const [fechaVencimiento, setFechaVencimiento] = useState("");
   const [cartLines, setCartLines] = useState<ReceiptCartLine[]>([]);
   const [viewingReceipt, setViewingReceipt] = useState<Receipt | null>(null);
@@ -48,8 +48,9 @@ export function ReceiptsPage() {
   }
 
   function handleOpenCreateDialog() {
-    setTerceroId(clientes[0]?.id.toString() ?? "");
-    setCondicion("contado");
+    // Cliente y condición empiezan vacíos para obligar al usuario a elegirlos
+    setTerceroId("");
+    setCondicion("");
     setFechaVencimiento("");
     setIsCreateDialogOpen(true);
   }
