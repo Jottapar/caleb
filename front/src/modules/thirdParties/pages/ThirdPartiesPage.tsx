@@ -4,11 +4,11 @@ import { useState } from "react";
 
 import { TablePagination } from "../../../shared/components/ui/TablePagination";
 import { normalizeText } from "../../../shared/lib/normalizeText";
+import { CreateThirdPartyDialog } from "../components/CreateThirdPartyDialog";
 import { ThirdPartyFilters, type TypeFilter } from "../components/ThirdPartyFilters";
 import { ThirdPartyForm } from "../components/ThirdPartyForm";
 import { ThirdPartyTable } from "../components/ThirdPartyTable";
 import { useBanks } from "../hooks/useBanks";
-import { useCreateThirdParty } from "../hooks/useCreateThirdParty";
 import { useDeleteThirdParty } from "../hooks/useDeleteThirdParty";
 import { useThirdParties } from "../hooks/useThirdParties";
 import { useUpdateThirdParty } from "../hooks/useUpdateThirdParty";
@@ -40,7 +40,6 @@ function filterThirdParties(thirdParties: ThirdParty[], name: string, type: Type
 export function ThirdPartiesPage() {
   const thirdParties = useThirdParties();
   const banks = useBanks();
-  const createThirdParty = useCreateThirdParty();
   const updateThirdParty = useUpdateThirdParty();
   const deleteThirdParty = useDeleteThirdParty();
   const [creating, setCreating] = useState(false);
@@ -79,15 +78,7 @@ export function ThirdPartiesPage() {
   }
 
   function handleOpenCreate() {
-    // Limpia el error de un intento anterior para que no aparezca al reabrir la ventana.
-    createThirdParty.reset();
     setCreating(true);
-  }
-
-  // La ventana se cierra solo si el backend guardó: si falla, queda abierta con los
-  // datos escritos y el error a la vista para que el usuario corrija.
-  function handleCreate(data: ThirdPartyCreate) {
-    createThirdParty.mutate(data, { onSuccess: () => setCreating(false) });
   }
 
   function handleToggleActive(thirdParty: ThirdParty, activo: boolean) {
@@ -168,29 +159,10 @@ export function ThirdPartiesPage() {
       )}
 
       {creating && (
-        <Dialog.Root
-          open
-          onOpenChange={(details) => !details.open && setCreating(false)}
-        >
-          <Dialog.Backdrop />
-          <Dialog.Positioner>
-            <Dialog.Content>
-              <Dialog.Header>
-                <Dialog.Title>Crear cliente o proveedor</Dialog.Title>
-              </Dialog.Header>
-              <Dialog.Body>
-                <ThirdPartyForm
-                  banks={banks.data ?? []}
-                  banksError={banks.isError}
-                  onSubmit={handleCreate}
-                  onCancel={() => setCreating(false)}
-                  isSubmitting={createThirdParty.isPending}
-                  errorMessage={getErrorMessage(createThirdParty.isError, createThirdParty.error)}
-                />
-              </Dialog.Body>
-            </Dialog.Content>
-          </Dialog.Positioner>
-        </Dialog.Root>
+        <CreateThirdPartyDialog
+          title="Crear cliente o proveedor"
+          onClose={() => setCreating(false)}
+        />
       )}
 
       {editingThirdParty && (
