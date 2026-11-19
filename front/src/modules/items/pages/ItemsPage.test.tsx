@@ -242,46 +242,105 @@ it("cierra el drawer sin guardar al hacer click en Cerrar", async () => {
   ).not.toBeInTheDocument();
 });
 
-it("desactiva un producto con el switch y se ve apagado en la lista", async () => {
-  let producto = { ...HARINA };
+function mockItemsConPatch(inicial: Record<string, unknown>[]) {
+  let items = inicial;
   server.use(
     http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
-    http.get(ITEMS_URL, () => HttpResponse.json([producto])),
-    http.patch(`${ITEMS_URL}/:id`, async ({ request }) => {
+    http.get(ITEMS_URL, () => HttpResponse.json(items)),
+    http.patch(`${ITEMS_URL}/:id`, async ({ request, params }) => {
       const data = (await request.json()) as Record<string, unknown>;
-      producto = { ...producto, ...data };
-      return HttpResponse.json(producto);
+      items = items.map((item) =>
+        item.id === Number(params.id) ? { ...item, ...data } : item,
+      );
+      return HttpResponse.json(items.find((i) => i.id === Number(params.id)));
     }),
   );
+}
+
+it("desactivar un producto pide confirmación mostrando sus existencias y lo pasa a Inactivos", async () => {
+  mockItemsConPatch([HARINA]);
   const user = userEvent.setup();
 
   renderPage();
-  const switchInput = await screen.findByRole("checkbox");
-  expect(switchInput).toBeChecked();
-  await user.click(switchInput);
+  await user.click(await screen.findByRole("button", { name: "Desactivar" }));
+  const dialog = await screen.findByRole("alertdialog");
+  expect(
+    within(dialog).getByRole("heading", { name: "Desactivar Harina de trigo" }),
+  ).toBeInTheDocument();
+  expect(
+    within(dialog).getByText(/tiene 10 en existencias/i),
+  ).toBeInTheDocument();
+  await user.click(within(dialog).getByRole("button", { name: "Desactivar" }));
 
-  expect(await screen.findByRole("checkbox")).not.toBeChecked();
+  // Desaparece de Activos...
+  await waitFor(() =>
+    expect(screen.queryByText("Harina de trigo")).not.toBeInTheDocument(),
+  );
+  expect(screen.getByText("No tienes productos activos.")).toBeInTheDocument();
+  // ...y aparece en Inactivos
+  await user.click(screen.getByRole("button", { name: "Inactivos" }));
+  expect(await screen.findByText("Harina de trigo")).toBeInTheDocument();
 });
 
-it("reactiva un producto con el switch y se ve prendido en la lista", async () => {
-  let producto = { ...HARINA, activo: false };
+it("cancelar el diálogo de desactivar no cambia nada", async () => {
+  mockItemsConPatch([HARINA]);
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Desactivar" }));
+  const dialog = await screen.findByRole("alertdialog");
+  await user.click(within(dialog).getByRole("button", { name: "Cancelar" }));
+
+  await waitFor(() =>
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+  );
+  expect(screen.getByText("Harina de trigo")).toBeInTheDocument();
+});
+
+it("en Inactivos se activa un producto con un botón, sin confirmar, y vuelve a Activos", async () => {
+  mockItemsConPatch([{ ...HARINA, activo: false }]);
+  const user = userEvent.setup();
+
+  renderPage();
+  // Por defecto se ve Activos: el inactivo no está
+  expect(
+    await screen.findByText("No tienes productos activos."),
+  ).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Inactivos" }));
+  await user.click(await screen.findByRole("button", { name: "Activar" }));
+
+  await waitFor(() =>
+    expect(
+      screen.getByText("No tienes productos inactivos."),
+    ).toBeInTheDocument(),
+  );
+  expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Activos" }));
+  expect(await screen.findByText("Harina de trigo")).toBeInTheDocument();
+});
+
+it("muestra el mensaje del backend y deja el diálogo abierto si un insumo lo usa una ficha activa", async () => {
+  const mensaje =
+    "No se puede desactivar Gel porque la ficha tecnica Corte de pelo para hombre lo esta utilizando";
   server.use(
     http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
-    http.get(ITEMS_URL, () => HttpResponse.json([producto])),
-    http.patch(`${ITEMS_URL}/:id`, async ({ request }) => {
-      const data = (await request.json()) as Record<string, unknown>;
-      producto = { ...producto, ...data };
-      return HttpResponse.json(producto);
-    }),
+    http.get(ITEMS_URL, () => HttpResponse.json([GEL])),
+    http.patch(`${ITEMS_URL}/:id`, () =>
+      HttpResponse.json(
+        { error: "business_error", message: mensaje },
+        { status: 422 },
+      ),
+    ),
   );
   const user = userEvent.setup();
 
   renderPage();
-  const switchInput = await screen.findByRole("checkbox");
-  expect(switchInput).not.toBeChecked();
-  await user.click(switchInput);
+  await user.click(await screen.findByRole("button", { name: "Desactivar" }));
+  const dialog = await screen.findByRole("alertdialog");
+  await user.click(within(dialog).getByRole("button", { name: "Desactivar" }));
 
-  expect(await screen.findByRole("checkbox")).toBeChecked();
+  expect(await within(dialog).findByText(mensaje)).toBeInTheDocument();
+  expect(screen.getByRole("alertdialog")).toBeInTheDocument();
 });
 
 it("elimina un producto al confirmar en el diálogo", async () => {
@@ -1121,7 +1180,7 @@ it("muestra en el drawer de la ficha el error del backend y lo deja abierto", as
   ).toBeInTheDocument();
 });
 
-it("desactiva una ficha con el switch y se ve apagado en la lista", async () => {
+it("desactiva una ficha tras confirmar y pasa a Inactivos", async () => {
   let ficha = { ...FICHA };
   let enviado: Record<string, unknown> = {};
   mockItems([]);
@@ -1136,12 +1195,22 @@ it("desactiva una ficha con el switch y se ve apagado en la lista", async () => 
   const user = userEvent.setup();
 
   renderPage();
-  const interruptor = await screen.findByRole("checkbox");
-  expect(interruptor).toBeChecked();
-  await user.click(interruptor);
+  await user.click(await screen.findByRole("button", { name: "Desactivar" }));
+  const dialog = await screen.findByRole("alertdialog");
+  // Una ficha no tiene existencias: la confirmación no las menciona
+  expect(within(dialog).queryByText(/existencias/i)).not.toBeInTheDocument();
+  await user.click(within(dialog).getByRole("button", { name: "Desactivar" }));
 
-  await waitFor(() => expect(screen.getByRole("checkbox")).not.toBeChecked());
+  await waitFor(() =>
+    expect(
+      screen.queryByText("Corte de pelo para hombre"),
+    ).not.toBeInTheDocument(),
+  );
   expect(enviado).toEqual({ activo: false });
+  await user.click(screen.getByRole("button", { name: "Inactivos" }));
+  expect(
+    await screen.findByText("Corte de pelo para hombre"),
+  ).toBeInTheDocument();
 });
 
 it("elimina una ficha tras confirmar y desaparece de la tabla", async () => {

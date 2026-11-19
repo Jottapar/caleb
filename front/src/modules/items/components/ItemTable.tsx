@@ -1,4 +1,4 @@
-import { Button, Switch, Table } from "@chakra-ui/react";
+import { Button, Table } from "@chakra-ui/react";
 
 import { formatCop, formatStock } from "../../../shared/lib/formatters";
 import type { Item, ProductRow } from "../types";
@@ -8,20 +8,20 @@ type Props = {
   rows: ProductRow[];
   onEdit: (item: Item) => void;
   onEditSheet: (sheet: TechnicalSheet) => void;
-  onToggleSheetActive: (sheet: TechnicalSheet, activo: boolean) => void;
-  onDeleteSheet: (sheet: TechnicalSheet) => void;
-  onToggleActive: (item: Item, activo: boolean) => void;
+  // Recibe la fila completa (producto o ficha) y el estado al que se quiere pasar.
+  // Quien la usa decide si pide confirmación (desactivar) o cambia directo (activar).
+  onSetActive: (row: ProductRow, activo: boolean) => void;
   onDelete: (item: Item) => void;
+  onDeleteSheet: (sheet: TechnicalSheet) => void;
 };
 
 export function ItemTable({
   rows,
   onEdit,
   onEditSheet,
-  onToggleSheetActive,
-  onDeleteSheet,
-  onToggleActive,
+  onSetActive,
   onDelete,
+  onDeleteSheet,
 }: Props) {
   return (
     <Table.Root>
@@ -32,13 +32,24 @@ export function ItemTable({
           <Table.ColumnHeader>Costo</Table.ColumnHeader>
           <Table.ColumnHeader>Precio de venta</Table.ColumnHeader>
           <Table.ColumnHeader>Existencias</Table.ColumnHeader>
-          <Table.ColumnHeader>Activo</Table.ColumnHeader>
           <Table.ColumnHeader></Table.ColumnHeader>
         </Table.Row>
       </Table.Header>
       <Table.Body>
-        {rows.map((row) =>
-          row.kind === "sheet" ? (
+        {rows.map((row) => {
+          const activo = row.kind === "sheet" ? row.sheet.activo : row.item.activo;
+          // El mismo botón sirve en las dos vistas: en Activos desactiva, en Inactivos activa.
+          const activeButton = (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => onSetActive(row, !activo)}
+            >
+              {activo ? "Desactivar" : "Activar"}
+            </Button>
+          );
+
+          return row.kind === "sheet" ? (
             // Una ficha tecnica no tiene existencias propias: gasta las de sus insumos al venderse.
             <Table.Row key={`sheet-${row.sheet.id}`}>
               <Table.Cell>{row.sheet.codigo}</Table.Cell>
@@ -47,19 +58,6 @@ export function ItemTable({
               <Table.Cell>{formatCop(row.sheet.precio_venta)}</Table.Cell>
               <Table.Cell color="fg.muted">—</Table.Cell>
               <Table.Cell>
-                <Switch.Root
-                  checked={row.sheet.activo}
-                  onCheckedChange={(details) =>
-                    onToggleSheetActive(row.sheet, details.checked)
-                  }
-                >
-                  <Switch.HiddenInput />
-                  <Switch.Control>
-                    <Switch.Thumb />
-                  </Switch.Control>
-                </Switch.Root>
-              </Table.Cell>
-              <Table.Cell>
                 <Button
                   size="sm"
                   variant="ghost"
@@ -67,6 +65,7 @@ export function ItemTable({
                 >
                   Editar
                 </Button>
+                {activeButton}
                 <Button
                   size="sm"
                   variant="ghost"
@@ -85,19 +84,6 @@ export function ItemTable({
               <Table.Cell>{formatCop(row.item.precio_venta)}</Table.Cell>
               <Table.Cell>{formatStock(row.item.existencias)}</Table.Cell>
               <Table.Cell>
-                <Switch.Root
-                  checked={row.item.activo}
-                  onCheckedChange={(details) =>
-                    onToggleActive(row.item, details.checked)
-                  }
-                >
-                  <Switch.HiddenInput />
-                  <Switch.Control>
-                    <Switch.Thumb />
-                  </Switch.Control>
-                </Switch.Root>
-              </Table.Cell>
-              <Table.Cell>
                 <Button
                   size="sm"
                   variant="ghost"
@@ -105,6 +91,7 @@ export function ItemTable({
                 >
                   Editar
                 </Button>
+                {activeButton}
                 <Button
                   size="sm"
                   variant="ghost"
@@ -115,8 +102,8 @@ export function ItemTable({
                 </Button>
               </Table.Cell>
             </Table.Row>
-          ),
-        )}
+          );
+        })}
       </Table.Body>
     </Table.Root>
   );

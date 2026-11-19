@@ -7,6 +7,7 @@ from app.core.errors import BusinessError, NotFoundError
 from app.modules.items.models import InventoryMovement, Item
 from app.modules.items.schemas import ItemRead, ItemUpdate, StockMovementLine
 from app.modules.taxes.models import Tax
+from app.modules.technical_sheets.models import TechnicalSheet, TechnicalSheetItemLine
 
 
 def _validate_item(nombre: str, se_vende: bool, es_insumo: bool) -> None:
@@ -39,6 +40,31 @@ def _validate_code(
     existing = session.exec(query).first()
     if existing:
         raise BusinessError(f"Ya existe un producto con el codigo {codigo}")
+
+
+def _validate_not_used_by_active_sheets(session: Session, item: Item) -> None:
+    """Un insumo que una ficha tecnica activa necesita no se puede desactivar."""
+    nombres = session.exec(
+        select(TechnicalSheet.nombre)
+        .join(TechnicalSheetItemLine, TechnicalSheetItemLine.ficha_tecnica_id == TechnicalSheet.id)
+        .where(
+            TechnicalSheetItemLine.item_id == item.id,
+            TechnicalSheet.empresa_id == item.empresa_id,
+            TechnicalSheet.activo,
+        )
+        .order_by(TechnicalSheet.nombre)
+    ).all()
+    if not nombres:
+        return
+    if len(nombres) == 1:
+        raise BusinessError(
+            f"No se puede desactivar {item.nombre} porque la ficha tecnica "
+            f"{nombres[0]} lo esta utilizando"
+        )
+    raise BusinessError(
+        f"No se puede desactivar {item.nombre} porque las fichas tecnicas "
+        f"{', '.join(nombres)} lo estan utilizando"
+    )
 
 
 def get_stock(session: Session, item_id: int) -> Decimal:
@@ -139,6 +165,9 @@ def update_item(session: Session, item_id: int, data: ItemUpdate, empresa_id: in
         cambios["codigo"] = codigo
     if "impuesto_id" in cambios:
         _validate_tax(session, cambios["impuesto_id"], empresa_id)
+    # Solo importa cuando se desactiva un producto que hoy esta activo
+    if cambios.get("activo") is False and item.activo:
+        _validate_not_used_by_active_sheets(session, item)
 
     item.sqlmodel_update(cambios)
     session.add(item)

@@ -458,3 +458,61 @@ def test_delete_sheet_returns_404_if_it_does_not_exist(logged_in_client):
     response = logged_in_client.delete(f"{URL}/999", headers=_csrf_headers(logged_in_client))
 
     assert response.status_code == 404
+
+
+def _desactivar_item(logged_in_client, item_id):
+    return logged_in_client.patch(
+        f"/api/v1/items/{item_id}",
+        json={"activo": False},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+
+def test_cannot_deactivate_supply_used_by_an_active_sheet(logged_in_client, session):
+    gel = _insumo(session, "Gel", 1000)
+    _post(logged_in_client, session, insumos=[{"item_id": gel.id, "cantidad": "1"}])
+
+    response = _desactivar_item(logged_in_client, gel.id)
+
+    assert response.status_code == 422
+    assert response.json()["message"] == (
+        "No se puede desactivar Gel porque la ficha tecnica "
+        "Corte de pelo para hombre lo esta utilizando"
+    )
+    items = logged_in_client.get("/api/v1/items").json()
+    assert items[0]["activo"] is True
+
+
+def test_deactivate_error_names_every_active_sheet_using_the_supply(logged_in_client, session):
+    gel = _insumo(session, "Gel", 1000)
+    linea = [{"item_id": gel.id, "cantidad": "1"}]
+    _post(logged_in_client, session, nombre="Corte B", insumos=linea)
+    _post(logged_in_client, session, nombre="Corte A", insumos=linea)
+
+    response = _desactivar_item(logged_in_client, gel.id)
+
+    assert response.status_code == 422
+    assert "Corte A, Corte B" in response.json()["message"]
+
+
+def test_can_deactivate_supply_when_its_sheets_are_inactive(logged_in_client, session):
+    gel = _insumo(session, "Gel", 1000)
+    creada = _post(
+        logged_in_client, session, insumos=[{"item_id": gel.id, "cantidad": "1"}]
+    ).json()
+    logged_in_client.patch(
+        f"{URL}/{creada['id']}", json={"activo": False}, headers=_csrf_headers(logged_in_client)
+    )
+
+    response = _desactivar_item(logged_in_client, gel.id)
+
+    assert response.status_code == 200
+    assert response.json()["activo"] is False
+
+
+def test_can_deactivate_item_that_no_sheet_uses(logged_in_client, session):
+    gel = _insumo(session, "Gel", 1000)
+
+    response = _desactivar_item(logged_in_client, gel.id)
+
+    assert response.status_code == 200

@@ -13,6 +13,7 @@ import { isAxiosError } from "axios";
 import { useState } from "react";
 
 import { TablePagination } from "../../../shared/components/ui/TablePagination";
+import { formatStock } from "../../../shared/lib/formatters";
 import { normalizeText } from "../../../shared/lib/normalizeText";
 import {
   CreateTechnicalSheetDialog,
@@ -44,6 +45,8 @@ import type {
 
 const ERROR_GENERICO_GUARDAR =
   "No se pudo guardar el producto. Intenta de nuevo.";
+const ERROR_GENERICO_DESACTIVAR =
+  "No se pudo desactivar. Intenta de nuevo.";
 const ERROR_GENERICO_ELIMINAR =
   "No se pudo eliminar el producto. Intenta de nuevo.";
 const ERROR_GENERICO_AGREGAR =
@@ -64,6 +67,16 @@ function getErrorMessage(
   return isAxiosError(error) && error.response?.data?.message
     ? error.response.data.message
     : errorGenerico;
+}
+
+type View = "activos" | "inactivos";
+
+function isActive(row: ProductRow) {
+  return row.kind === "sheet" ? row.sheet.activo : row.item.activo;
+}
+
+function rowName(row: ProductRow) {
+  return row.kind === "sheet" ? row.sheet.nombre : row.item.nombre;
 }
 
 function matchesUse(row: ProductRow, use: UseFilter) {
@@ -111,6 +124,9 @@ export function ItemsPage() {
   const [pageSize, setPageSize] = useState(10);
   const [nameFilter, setNameFilter] = useState("");
   const [useFilter, setUseFilter] = useState<UseFilter>("todos");
+  const [view, setView] = useState<View>("activos");
+  // La fila (producto o ficha) que se está por desactivar: mientras haya una, se pide confirmación.
+  const [deactivating, setDeactivating] = useState<ProductRow | null>(null);
 
   // Productos y fichas tecnicas van en la misma tabla: primero los productos, despues las fichas.
   const rows: ProductRow[] = [
@@ -131,7 +147,9 @@ export function ItemsPage() {
   // La API devuelve todos los productos (los desplegables de Recibos los necesitan
   // completos). Primero se filtra y despues se pagina: la pagina se corta del
   // resultado filtrado, no de la lista completa.
-  const filtered = filterRows(rows, nameFilter, useFilter);
+  // La vista decide si se ven los activos o los inactivos; los filtros se aplican sobre esa vista.
+  const viewRows = rows.filter((row) => isActive(row) === (view === "activos"));
+  const filtered = filterRows(viewRows, nameFilter, useFilter);
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   // Si al eliminar se vacia la ultima pagina, se muestra la anterior en vez de una vacia.
@@ -159,6 +177,18 @@ export function ItemsPage() {
   }
 
   // El mismo diálogo sirve para eliminar un producto o una ficha: solo uno de los dos está elegido.
+  const deactivateErrorMessage =
+    deactivating?.kind === "sheet"
+      ? getErrorMessage(
+          setSheetActive.isError,
+          setSheetActive.error,
+          ERROR_GENERICO_DESACTIVAR,
+        )
+      : getErrorMessage(
+          updateItem.isError,
+          updateItem.error,
+          ERROR_GENERICO_DESACTIVAR,
+        );
   const deletingName = deletingItem?.nombre ?? deletingSheet?.nombre ?? "";
   const activeDelete = deletingSheet ? deleteSheet : deleteItem;
   const deleteErrorMessage = getErrorMessage(
@@ -203,8 +233,50 @@ export function ItemsPage() {
     createItem.mutate(data, { onSuccess: () => setCreating(false) });
   }
 
-  function handleToggleActive(item: Item, activo: boolean) {
-    updateItem.mutate({ id: item.id, data: { activo } });
+  function handleViewChange(newView: View) {
+    setView(newView);
+    setPage(1);
+  }
+
+  // Activar es reversible y no pierde nada: cambia directo. Desactivar pide confirmación.
+  function handleSetActive(row: ProductRow, activo: boolean) {
+    if (!activo) {
+      updateItem.reset();
+      setSheetActive.reset();
+      setDeactivating(row);
+      return;
+    }
+    if (row.kind === "sheet") {
+      setSheetActive.mutate({ id: row.sheet.id, activo });
+    } else {
+      updateItem.mutate({ id: row.item.id, data: { activo } });
+    }
+  }
+
+  function handleCloseDeactivate() {
+    setDeactivating(null);
+    updateItem.reset();
+    setSheetActive.reset();
+  }
+
+  // El diálogo se cierra solo si el backend desactivó: si lo rechaza (un insumo que una ficha
+  // activa usa), queda abierto con el mensaje del backend a la vista.
+  function handleConfirmDeactivate() {
+    if (!deactivating) {
+      return;
+    }
+    const onSuccess = () => setDeactivating(null);
+    if (deactivating.kind === "sheet") {
+      setSheetActive.mutate(
+        { id: deactivating.sheet.id, activo: false },
+        { onSuccess },
+      );
+    } else {
+      updateItem.mutate(
+        { id: deactivating.item.id, data: { activo: false } },
+        { onSuccess },
+      );
+    }
   }
 
   function handleUpdate(data: ItemUpdate) {
@@ -222,10 +294,6 @@ export function ItemsPage() {
     setDeletingSheet(null);
     deleteItem.reset();
     deleteSheet.reset();
-  }
-
-  function handleToggleSheetActive(sheet: TechnicalSheet, activo: boolean) {
-    setSheetActive.mutate({ id: sheet.id, activo });
   }
 
   function handleAddCartLine(linea: StockCartLine) {
@@ -305,13 +373,35 @@ export function ItemsPage() {
 
       {hasData && rows.length > 0 && (
         <>
+          <HStack>
+            <Button
+              variant={view === "activos" ? "solid" : "outline"}
+              aria-pressed={view === "activos"}
+              onClick={() => handleViewChange("activos")}
+            >
+              Activos
+            </Button>
+            <Button
+              variant={view === "inactivos" ? "solid" : "outline"}
+              aria-pressed={view === "inactivos"}
+              onClick={() => handleViewChange("inactivos")}
+            >
+              Inactivos
+            </Button>
+          </HStack>
           <ItemFilters
             name={nameFilter}
             use={useFilter}
             onNameChange={handleNameFilterChange}
             onUseChange={handleUseFilterChange}
           />
-          {total === 0 ? (
+          {viewRows.length === 0 ? (
+            <Text color="fg.muted">
+              {view === "activos"
+                ? "No tienes productos activos."
+                : "No tienes productos inactivos."}
+            </Text>
+          ) : total === 0 ? (
             <Text color="fg.muted">
               Ningún producto coincide con el filtro.
             </Text>
@@ -321,10 +411,9 @@ export function ItemsPage() {
                 rows={pageItems}
                 onEdit={setEditingItem}
                 onEditSheet={handleOpenEditSheet}
-                onToggleSheetActive={handleToggleSheetActive}
-                onDeleteSheet={setDeletingSheet}
-                onToggleActive={handleToggleActive}
+                onSetActive={handleSetActive}
                 onDelete={setDeletingItem}
+                onDeleteSheet={setDeletingSheet}
               />
               <TablePagination
                 itemsPerPageLabel="Productos por página"
@@ -394,6 +483,54 @@ export function ItemsPage() {
             </Drawer.Content>
           </Drawer.Positioner>
         </Drawer.Root>
+      )}
+
+      {deactivating && (
+        <Dialog.Root
+          role="alertdialog"
+          open
+          onOpenChange={(details) => !details.open && handleCloseDeactivate()}
+        >
+          <Dialog.Backdrop />
+          <Dialog.Positioner>
+            <Dialog.Content>
+              <Dialog.Header>
+                <Dialog.Title>Desactivar {rowName(deactivating)}</Dialog.Title>
+              </Dialog.Header>
+              <Dialog.Body>
+                <Text>
+                  ¿Seguro que quieres desactivar {rowName(deactivating)}?
+                  {deactivating.kind === "item" &&
+                    ` Tiene ${formatStock(deactivating.item.existencias)} en existencias.`}{" "}
+                  Dejará de verse en Productos y lo encontrarás en Inactivos.
+                </Text>
+                {deactivateErrorMessage && (
+                  <Text color="fg.error" mt="2">
+                    {deactivateErrorMessage}
+                  </Text>
+                )}
+              </Dialog.Body>
+              <Dialog.Footer>
+                <HStack>
+                  <Button variant="outline" onClick={handleCloseDeactivate}>
+                    Cancelar
+                  </Button>
+                  <Button
+                    colorPalette="brand"
+                    loading={
+                      deactivating.kind === "sheet"
+                        ? setSheetActive.isPending
+                        : updateItem.isPending
+                    }
+                    onClick={handleConfirmDeactivate}
+                  >
+                    Desactivar
+                  </Button>
+                </HStack>
+              </Dialog.Footer>
+            </Dialog.Content>
+          </Dialog.Positioner>
+        </Dialog.Root>
       )}
 
       {(deletingItem || deletingSheet) && (
