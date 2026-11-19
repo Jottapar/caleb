@@ -26,14 +26,14 @@ export function ItemTable({ rows, onEdit, onToggleActive, onDelete }: Props) {
       </Table.Header>
       <Table.Body>
         {rows.map((row) =>
-          row.kind === "service" ? (
-            // Un servicio no tiene existencias propias: gasta las de sus insumos al venderse.
-            // Editarlo, activarlo y eliminarlo llegan en una parte siguiente.
-            <Table.Row key={`service-${row.service.id}`}>
-              <Table.Cell>{row.service.codigo}</Table.Cell>
-              <Table.Cell>{row.service.nombre}</Table.Cell>
-              <Table.Cell>{formatCop(row.service.costo)}</Table.Cell>
-              <Table.Cell>{formatCop(row.service.precio_venta)}</Table.Cell>
+          row.kind === "sheet" ? (
+            // Una ficha tecnica no tiene existencias propias: gasta las de sus insumos al venderse.
+            // Editarla, activarla y eliminarla llegan en una parte siguiente.
+            <Table.Row key={`sheet-${row.sheet.id}`}>
+              <Table.Cell>{row.sheet.codigo}</Table.Cell>
+              <Table.Cell>{row.sheet.nombre}</Table.Cell>
+              <Table.Cell>{formatCop(row.sheet.costo)}</Table.Cell>
+              <Table.Cell>{formatCop(row.sheet.precio_venta)}</Table.Cell>
               <Table.Cell color="fg.muted">—</Table.Cell>
               <Table.Cell></Table.Cell>
               <Table.Cell></Table.Cell>

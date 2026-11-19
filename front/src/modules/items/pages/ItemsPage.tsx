@@ -4,7 +4,12 @@ import { useState } from "react";
 
 import { TablePagination } from "../../../shared/components/ui/TablePagination";
 import { normalizeText } from "../../../shared/lib/normalizeText";
-import { CreateServiceDialog, type ServiceCreate, useCreateService, useServices } from "../../services";
+import {
+  CreateTechnicalSheetDialog,
+  type TechnicalSheetCreate,
+  useCreateTechnicalSheet,
+  useTechnicalSheets,
+} from "../../technicalSheets";
 import { AddStockCartDialog } from "../components/AddStockCartDialog";
 import { ItemFilters, type UseFilter } from "../components/ItemFilters";
 import { ItemForm } from "../components/ItemForm";
@@ -19,7 +24,7 @@ import type { Item, ItemCreate, ItemUpdate, ProductRow, StockCartLine } from "..
 const ERROR_GENERICO_GUARDAR = "No se pudo guardar el producto. Intenta de nuevo.";
 const ERROR_GENERICO_ELIMINAR = "No se pudo eliminar el producto. Intenta de nuevo.";
 const ERROR_GENERICO_AGREGAR = "No se pudo actualizar las existencias. Intenta de nuevo.";
-const ERROR_GENERICO_SERVICIO = "No se pudo crear el servicio. Intenta de nuevo.";
+const ERROR_GENERICO_FICHA = "No se pudo crear la ficha técnica. Intenta de nuevo.";
 
 function getErrorMessage(isError: boolean, error: unknown, errorGenerico = ERROR_GENERICO_GUARDAR) {
   if (!isError) {
@@ -34,32 +39,32 @@ function matchesUse(row: ProductRow, use: UseFilter) {
   if (use === "todos") {
     return true;
   }
-  // Un servicio siempre se vende y nunca es insumo.
-  if (row.kind === "service") {
-    return use === "servicios" || use === "se_vende";
+  // Una ficha tecnica siempre se vende y nunca es insumo.
+  if (row.kind === "sheet") {
+    return use === "fichas" || use === "se_vende";
   }
   // Un producto puede venderse y ser insumo a la vez: sale en los dos filtros.
-  return use !== "servicios" && row.item[use];
+  return use !== "fichas" && row.item[use];
 }
 
 function filterRows(rows: ProductRow[], name: string, use: UseFilter) {
   const search = normalizeText(name);
   return rows.filter((row) => {
-    const nombre = row.kind === "item" ? row.item.nombre : row.service.nombre;
+    const nombre = row.kind === "item" ? row.item.nombre : row.sheet.nombre;
     return matchesUse(row, use) && normalizeText(nombre).includes(search);
   });
 }
 
 export function ItemsPage() {
   const items = useItems();
-  const services = useServices();
-  const createService = useCreateService();
+  const sheets = useTechnicalSheets();
+  const createSheet = useCreateTechnicalSheet();
   const createItem = useCreateItem();
   const updateItem = useUpdateItem();
   const deleteItem = useDeleteItem();
   const addStockBulk = useAddStockBulk();
   const [creating, setCreating] = useState(false);
-  const [creatingService, setCreatingService] = useState(false);
+  const [creatingSheet, setCreatingSheet] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [deletingItem, setDeletingItem] = useState<Item | null>(null);
   const [isAddStockDialogOpen, setIsAddStockDialogOpen] = useState(false);
@@ -69,16 +74,16 @@ export function ItemsPage() {
   const [nameFilter, setNameFilter] = useState("");
   const [useFilter, setUseFilter] = useState<UseFilter>("todos");
 
-  // Productos y servicios van en la misma tabla: primero los productos, despues los servicios.
+  // Productos y fichas tecnicas van en la misma tabla: primero los productos, despues las fichas.
   const rows: ProductRow[] = [
     ...(items.data ?? []).map((item): ProductRow => ({ kind: "item", item })),
-    ...(services.data ?? []).map((service): ProductRow => ({ kind: "service", service })),
+    ...(sheets.data ?? []).map((sheet): ProductRow => ({ kind: "sheet", sheet })),
   ];
   // Solo los productos activos marcados como insumo pueden entrar en una ficha tecnica.
   const supplies = (items.data ?? []).filter((item) => item.es_insumo && item.activo);
-  const isPending = items.isPending || services.isPending;
-  const isError = items.isError || services.isError;
-  const hasData = Boolean(items.data && services.data);
+  const isPending = items.isPending || sheets.isPending;
+  const isError = items.isError || sheets.isError;
+  const hasData = Boolean(items.data && sheets.data);
 
   // La API devuelve todos los productos (los desplegables de Recibos los necesitan
   // completos). Primero se filtra y despues se pagina: la pagina se corta del
@@ -119,13 +124,13 @@ export function ItemsPage() {
     setCreating(true);
   }
 
-  function handleOpenCreateService() {
-    createService.reset();
-    setCreatingService(true);
+  function handleOpenCreateSheet() {
+    createSheet.reset();
+    setCreatingSheet(true);
   }
 
-  function handleCreateService(data: ServiceCreate) {
-    createService.mutate(data, { onSuccess: () => setCreatingService(false) });
+  function handleCreateSheet(data: TechnicalSheetCreate) {
+    createSheet.mutate(data, { onSuccess: () => setCreatingSheet(false) });
   }
 
   // La ventana se cierra solo si el backend guardó: si falla, queda abierta con los
@@ -189,8 +194,8 @@ export function ItemsPage() {
           <Button variant="outline" onClick={() => setIsAddStockDialogOpen(true)}>
             Agregar existencias
           </Button>
-          <Button variant="outline" onClick={handleOpenCreateService}>
-            Crear servicio o ficha técnica
+          <Button variant="outline" onClick={handleOpenCreateSheet}>
+            Crear ficha técnica
           </Button>
           <Button colorPalette="brand" onClick={handleOpenCreate}>
             Crear producto
@@ -331,17 +336,13 @@ export function ItemsPage() {
         </Dialog.Root>
       )}
 
-      {creatingService && (
-        <CreateServiceDialog
+      {creatingSheet && (
+        <CreateTechnicalSheetDialog
           supplies={supplies}
-          onSubmit={handleCreateService}
-          onClose={() => setCreatingService(false)}
-          isSubmitting={createService.isPending}
-          errorMessage={getErrorMessage(
-            createService.isError,
-            createService.error,
-            ERROR_GENERICO_SERVICIO,
-          )}
+          onSubmit={handleCreateSheet}
+          onClose={() => setCreatingSheet(false)}
+          isSubmitting={createSheet.isPending}
+          errorMessage={getErrorMessage(createSheet.isError, createSheet.error, ERROR_GENERICO_FICHA)}
         />
       )}
 

@@ -13,7 +13,12 @@ from app.modules.receipts.models import (  # noqa: F401
     Receipt,
     ReceiptItemLine,
 )
-from app.modules.services.models import Service, TechnicalSheetLine  # noqa: F401
+from app.modules.services.models import Service  # noqa: F401
 from app.modules.taxes.models import Tax  # noqa: F401
+from app.modules.technical_sheets.models import (  # noqa: F401
+    TechnicalSheet,
+    TechnicalSheetItemLine,
+    TechnicalSheetServiceLine,
+)
 from app.modules.third_parties.models import ThirdParty, ThirdPartyBankAccount  # noqa: F401
 from app.modules.users.models import User, UserCompany  # noqa: F401

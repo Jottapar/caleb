@@ -1,7 +1,7 @@
 import { Field, HStack, Input, NativeSelect } from "@chakra-ui/react";
 
 // "todos" no es un uso: es la ausencia de filtro.
-export type UseFilter = "todos" | "se_vende" | "es_insumo" | "servicios";
+export type UseFilter = "todos" | "se_vende" | "es_insumo" | "fichas";
 
 type Props = {
   name: string;
@@ -33,7 +33,7 @@ export function ItemFilters({ name, use, onNameChange, onUseChange }: Props) {
             <option value="todos">Todos</option>
             <option value="se_vende">Se venden</option>
             <option value="es_insumo">Insumos</option>
-            <option value="servicios">Servicios</option>
+            <option value="fichas">Fichas técnicas</option>
           </NativeSelect.Field>
         </NativeSelect.Root>
       </Field.Root>

@@ -1,0 +1,257 @@
+from decimal import Decimal
+
+from sqlmodel import select
+
+from app.modules.companies.models import Company
+from app.modules.items import service as items_service
+from app.modules.services import service as services_service
+from app.modules.services.schemas import ServiceCreate
+from app.modules.taxes.models import Tax
+
+URL = "/api/v1/technical-sheets"
+
+
+def _csrf_headers(logged_in_client):
+    return {"X-CSRF-TOKEN": logged_in_client.cookies.get("csrf_access_token")}
+
+
+def _empresa(session) -> Company:
+    return session.exec(select(Company).where(Company.nombre == "Panadería Luna")).one()
+
+
+def _sin_impuesto_id(session) -> int:
+    empresa = _empresa(session)
+    return session.exec(
+        select(Tax).where(Tax.nombre == "Sin impuesto", Tax.empresa_id == empresa.id)
+    ).one().id
+
+
+def _insumo(session, nombre, costo, es_insumo=True, se_vende=False, empresa_id=None):
+    return items_service.create_item(
+        session,
+        empresa_id=empresa_id or _empresa(session).id,
+        nombre=nombre,
+        impuesto_id=_sin_impuesto_id(session),
+        costo=costo,
+        se_vende=se_vende,
+        es_insumo=es_insumo,
+    )
+
+
+def _servicio(session, nombre="Corte de pelo", costo=8000):
+    return services_service.create_service(
+        session, _empresa(session).id, ServiceCreate(nombre=nombre, costo=Decimal(costo))
+    )
+
+
+def _post(logged_in_client, session, **overrides):
+    body = {
+        "nombre": "Corte de pelo para hombre",
+        "impuesto_id": _sin_impuesto_id(session),
+        "precio_venta": "25000",
+    }
+    body.update(overrides)
+    return logged_in_client.post(URL, json=body, headers=_csrf_headers(logged_in_client))
+
+
+def test_create_sheet_returns_201_with_code_and_cost_from_supplies_and_services(
+    logged_in_client, session
+):
+    gel = _insumo(session, "Gel", 1000)
+    corte = _servicio(session, costo=8000)
+
+    response = _post(
+        logged_in_client,
+        session,
+        insumos=[{"item_id": gel.id, "cantidad": "0.1"}],
+        servicios=[{"servicio_id": corte.id, "cantidad": "1"}],
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["codigo"] == "F-0001"
+    assert body["nombre"] == "Corte de pelo para hombre"
+    assert body["precio_venta"] == "25000.00"
+    # 0,1 x 1000 + 1 x 8000
+    assert body["costo"] == "8100.00"
+    assert [i["nombre"] for i in body["insumos"]] == ["Gel"]
+    assert [s["nombre"] for s in body["servicios"]] == ["Corte de pelo"]
+
+
+def test_create_sheet_service_quantity_defaults_to_one(logged_in_client, session):
+    corte = _servicio(session, costo=8000)
+
+    response = _post(logged_in_client, session, servicios=[{"servicio_id": corte.id}])
+
+    assert response.status_code == 201
+    assert response.json()["servicios"][0]["cantidad"] == "1.0000"
+    assert response.json()["costo"] == "8000.00"
+
+
+def test_create_sheet_accepts_only_a_service_without_supplies(logged_in_client, session):
+    asesoria = _servicio(session, nombre="Asesoria", costo=5000)
+
+    response = _post(logged_in_client, session, servicios=[{"servicio_id": asesoria.id}])
+
+    assert response.status_code == 201
+    assert response.json()["insumos"] == []
+
+
+def test_create_sheet_codes_are_consecutive(logged_in_client, session):
+    corte = _servicio(session)
+    _post(logged_in_client, session, servicios=[{"servicio_id": corte.id}])
+
+    response = _post(
+        logged_in_client, session, nombre="Otro", servicios=[{"servicio_id": corte.id}]
+    )
+
+    assert response.json()["codigo"] == "F-0002"
+
+
+def test_sheet_cost_follows_the_current_cost_of_supplies_and_services(logged_in_client, session):
+    gel = _insumo(session, "Gel", 1000)
+    corte = _servicio(session, costo=8000)
+    _post(
+        logged_in_client,
+        session,
+        insumos=[{"item_id": gel.id, "cantidad": "2"}],
+        servicios=[{"servicio_id": corte.id, "cantidad": "1"}],
+    )
+
+    logged_in_client.patch(
+        f"/api/v1/items/{gel.id}", json={"costo": "1500"}, headers=_csrf_headers(logged_in_client)
+    )
+    corte.costo = Decimal(9000)
+    session.add(corte)
+    session.flush()
+    response = logged_in_client.get(URL)
+
+    # 2 x 1500 + 1 x 9000
+    assert response.json()[0]["costo"] == "12000.00"
+
+
+def test_create_sheet_accepts_supply_that_is_also_sold(logged_in_client, session):
+    agua = _insumo(session, "Agua", 800, es_insumo=True, se_vende=True)
+
+    response = _post(logged_in_client, session, insumos=[{"item_id": agua.id, "cantidad": "1"}])
+
+    assert response.status_code == 201
+
+
+def test_create_sheet_rejects_item_that_is_not_a_supply(logged_in_client, session):
+    pan = _insumo(session, "Pan", 300, es_insumo=False, se_vende=True)
+
+    response = _post(logged_in_client, session, insumos=[{"item_id": pan.id, "cantidad": "1"}])
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "business_error"
+
+
+def test_create_sheet_rejects_without_any_line(logged_in_client, session):
+    response = _post(logged_in_client, session, insumos=[], servicios=[])
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "business_error"
+
+
+def test_create_sheet_rejects_repeated_supply(logged_in_client, session):
+    gel = _insumo(session, "Gel", 1000)
+
+    response = _post(
+        logged_in_client,
+        session,
+        insumos=[{"item_id": gel.id, "cantidad": "1"}, {"item_id": gel.id, "cantidad": "2"}],
+    )
+
+    assert response.status_code == 422
+
+
+def test_create_sheet_rejects_repeated_service(logged_in_client, session):
+    corte = _servicio(session)
+
+    response = _post(
+        logged_in_client,
+        session,
+        servicios=[
+            {"servicio_id": corte.id, "cantidad": "1"},
+            {"servicio_id": corte.id, "cantidad": "2"},
+        ],
+    )
+
+    assert response.status_code == 422
+
+
+def test_create_sheet_rejects_zero_quantity_in_supply(logged_in_client, session):
+    gel = _insumo(session, "Gel", 1000)
+
+    response = _post(logged_in_client, session, insumos=[{"item_id": gel.id, "cantidad": "0"}])
+
+    assert response.status_code == 422
+
+
+def test_create_sheet_rejects_zero_quantity_in_service(logged_in_client, session):
+    corte = _servicio(session)
+
+    response = _post(
+        logged_in_client, session, servicios=[{"servicio_id": corte.id, "cantidad": "0"}]
+    )
+
+    assert response.status_code == 422
+
+
+def test_create_sheet_rejects_empty_name(logged_in_client, session):
+    corte = _servicio(session)
+
+    response = _post(
+        logged_in_client, session, nombre="  ", servicios=[{"servicio_id": corte.id}]
+    )
+
+    assert response.status_code == 422
+
+
+def test_create_sheet_rejects_supply_from_another_company(logged_in_client, session):
+    otra = Company(nombre="Otra empresa")
+    session.add(otra)
+    session.flush()
+    session.add(Tax(empresa_id=otra.id, nombre="Sin impuesto", porcentaje=0))
+    session.flush()
+    ajeno = items_service.create_item(
+        session,
+        empresa_id=otra.id,
+        nombre="Gel ajeno",
+        impuesto_id=session.exec(select(Tax).where(Tax.empresa_id == otra.id)).one().id,
+        se_vende=False,
+        es_insumo=True,
+    )
+
+    response = _post(logged_in_client, session, insumos=[{"item_id": ajeno.id, "cantidad": "1"}])
+
+    assert response.status_code == 422
+
+
+def test_create_sheet_rejects_service_from_another_company(logged_in_client, session):
+    otra = Company(nombre="Otra empresa")
+    session.add(otra)
+    session.flush()
+    ajeno = services_service.create_service(
+        session, otra.id, ServiceCreate(nombre="Servicio ajeno", costo=Decimal(100))
+    )
+
+    response = _post(logged_in_client, session, servicios=[{"servicio_id": ajeno.id}])
+
+    assert response.status_code == 422
+
+
+def test_create_sheet_does_not_touch_supply_stock(logged_in_client, session):
+    gel = _insumo(session, "Gel", 1000)
+
+    _post(logged_in_client, session, insumos=[{"item_id": gel.id, "cantidad": "2"}])
+    items = logged_in_client.get("/api/v1/items").json()
+
+    assert Decimal(items[0]["existencias"]) == 0
+
+
+def test_list_sheets_requires_authentication(client):
+    response = client.get(URL)
+
+    assert response.status_code == 401

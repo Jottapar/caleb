@@ -10,11 +10,16 @@ import { ItemsPage } from "./ItemsPage";
 const ITEMS_URL = "/api/v1/items";
 const TAXES_URL = "/api/v1/taxes";
 const SERVICES_URL = "/api/v1/services";
+const SHEETS_URL = "/api/v1/technical-sheets";
 
-// La pagina tambien pide los servicios. Por defecto no hay ninguno; un test que los
-// necesite declara su propio handler con server.use, que tiene prioridad sobre este.
+// La pagina tambien pide las fichas tecnicas, y la ventana de crear ficha pide los servicios.
+// Por defecto no hay ninguno; un test que los necesite declara su propio handler con
+// server.use, que tiene prioridad sobre estos.
 beforeEach(() => {
-  server.use(http.get(SERVICES_URL, () => HttpResponse.json([])));
+  server.use(
+    http.get(SHEETS_URL, () => HttpResponse.json([])),
+    http.get(SERVICES_URL, () => HttpResponse.json([])),
+  );
 });
 
 const SIN_IMPUESTO = { id: 1, nombre: "Sin impuesto", porcentaje: "0.00", activo: true };
@@ -724,46 +729,60 @@ const PAN = {
   es_insumo: false,
 };
 
-const CORTE = {
+const CORTE_SERVICIO = {
   id: 1,
   codigo: "S-0001",
   nombre: "Corte de pelo",
+  costo: "8000.00",
+  activo: true,
+};
+
+const FICHA = {
+  id: 1,
+  codigo: "F-0001",
+  nombre: "Corte de pelo para hombre",
   precio_venta: "25000.00",
   impuesto_id: 1,
   activo: true,
-  costo: "2500.00",
+  costo: "8100.00",
   insumos: [],
+  servicios: [],
 };
 
-it("muestra los servicios en la tabla de productos con su costo y sin existencias", async () => {
+async function openSheetDialog(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole("button", { name: "Crear ficha técnica" }));
+  return screen.findByRole("dialog", { name: "Crear ficha técnica" });
+}
+
+it("muestra las fichas técnicas en la tabla de productos con su código F, costo y sin existencias", async () => {
   server.use(
     http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
     http.get(ITEMS_URL, () => HttpResponse.json([HARINA])),
-    http.get(SERVICES_URL, () => HttpResponse.json([CORTE])),
+    http.get(SHEETS_URL, () => HttpResponse.json([FICHA])),
   );
 
   renderPage();
 
-  const fila = (await screen.findByText("Corte de pelo")).closest("tr") as HTMLElement;
-  expect(within(fila).getByText("S-0001")).toBeInTheDocument();
-  expect(within(fila).getByText(/^2\.500\sCOP$/)).toBeInTheDocument();
+  const fila = (await screen.findByText("Corte de pelo para hombre")).closest("tr") as HTMLElement;
+  expect(within(fila).getByText("F-0001")).toBeInTheDocument();
+  expect(within(fila).getByText(/^8\.100\sCOP$/)).toBeInTheDocument();
   expect(within(fila).getByText(/^25\.000\sCOP$/)).toBeInTheDocument();
   expect(within(fila).getByText("—")).toBeInTheDocument();
 });
 
-it("el filtro Servicios muestra solo los servicios", async () => {
+it("el filtro Fichas técnicas muestra solo las fichas", async () => {
   server.use(
     http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
     http.get(ITEMS_URL, () => HttpResponse.json([HARINA])),
-    http.get(SERVICES_URL, () => HttpResponse.json([CORTE])),
+    http.get(SHEETS_URL, () => HttpResponse.json([FICHA])),
   );
   const user = userEvent.setup();
 
   renderPage();
-  await screen.findByText("Corte de pelo");
-  await user.selectOptions(screen.getByLabelText(/filtrar por uso/i), "servicios");
+  await screen.findByText("Corte de pelo para hombre");
+  await user.selectOptions(screen.getByLabelText(/filtrar por uso/i), "fichas");
 
-  expect(screen.getByText("Corte de pelo")).toBeInTheDocument();
+  expect(screen.getByText("Corte de pelo para hombre")).toBeInTheDocument();
   expect(screen.queryByText("Harina de trigo")).not.toBeInTheDocument();
 });
 
@@ -772,12 +791,7 @@ it("la ficha técnica solo ofrece productos marcados como insumo", async () => {
   const user = userEvent.setup();
 
   renderPage();
-  await user.click(
-    await screen.findByRole("button", {
-      name: "Crear servicio o ficha técnica",
-    }),
-  );
-  const dialog = await screen.findByRole("dialog");
+  const dialog = await openSheetDialog(user);
   const opciones = within(within(dialog).getByLabelText("Insumo"))
     .getAllByRole("option")
     .map((option) => option.textContent);
@@ -785,70 +799,77 @@ it("la ficha técnica solo ofrece productos marcados como insumo", async () => {
   expect(opciones).toEqual(["Shampoo", "Gel"]);
 });
 
-it("crea un servicio con sus insumos, muestra el costo y aparece en la tabla", async () => {
+it("crea un servicio desde la ficha, queda elegido y se guarda la ficha con insumos y servicios", async () => {
   let servicios: unknown[] = [];
-  let enviado: Record<string, unknown> = {};
+  let fichas: unknown[] = [];
+  let servicioEnviado: Record<string, unknown> = {};
+  let fichaEnviada: Record<string, unknown> = {};
   server.use(
     http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
-    http.get(ITEMS_URL, () => HttpResponse.json([SHAMPOO, GEL])),
+    http.get(ITEMS_URL, () => HttpResponse.json([SHAMPOO])),
     http.get(SERVICES_URL, () => HttpResponse.json(servicios)),
+    http.get(SHEETS_URL, () => HttpResponse.json(fichas)),
     http.post(SERVICES_URL, async ({ request }) => {
-      enviado = (await request.json()) as Record<string, unknown>;
-      const creado = { ...CORTE, nombre: enviado.nombre };
-      servicios = [creado];
-      return HttpResponse.json(creado, { status: 201 });
+      servicioEnviado = (await request.json()) as Record<string, unknown>;
+      servicios = [CORTE_SERVICIO];
+      return HttpResponse.json(CORTE_SERVICIO, { status: 201 });
+    }),
+    http.post(SHEETS_URL, async ({ request }) => {
+      fichaEnviada = (await request.json()) as Record<string, unknown>;
+      const creada = { ...FICHA, nombre: fichaEnviada.nombre };
+      fichas = [creada];
+      return HttpResponse.json(creada, { status: 201 });
     }),
   );
   const user = userEvent.setup();
 
   renderPage();
-  await user.click(
-    await screen.findByRole("button", {
-      name: "Crear servicio o ficha técnica",
-    }),
-  );
-  const dialog = await screen.findByRole("dialog");
+  const dialog = await openSheetDialog(user);
   await within(dialog).findByRole("option", { name: "Sin impuesto" });
-  await user.type(within(dialog).getByLabelText(/nombre/i), "Corte de pelo");
+  await user.type(within(dialog).getByLabelText(/^nombre/i), "Corte de pelo para hombre");
   await user.type(within(dialog).getByLabelText(/precio de venta/i), "25000");
-  await user.selectOptions(within(dialog).getByLabelText("Insumo"), "10");
-  await user.type(within(dialog).getByLabelText("Cantidad"), "2");
-  await user.click(within(dialog).getByRole("button", { name: "Agregar insumo" }));
-  await user.selectOptions(within(dialog).getByLabelText("Insumo"), "11");
-  await user.type(within(dialog).getByLabelText("Cantidad"), "1");
+  await user.type(within(dialog).getByLabelText("Cantidad de insumo"), "2");
   await user.click(within(dialog).getByRole("button", { name: "Agregar insumo" }));
 
-  // 2 x 1.000 + 1 x 500
-  expect(within(dialog).getByText(/costo del servicio: 2\.500\sCOP/i)).toBeInTheDocument();
-
+  // Sin servicios todavía: solo se ofrece crear uno, en una ventana aparte
   await user.click(within(dialog).getByRole("button", { name: "Crear servicio" }));
+  const serviceDialog = await screen.findByRole("dialog", { name: "Crear servicio" });
+  await user.type(within(serviceDialog).getByLabelText(/nombre del servicio/i), "Corte de pelo");
+  await user.type(within(serviceDialog).getByLabelText("Costo"), "8000");
+  await user.click(within(serviceDialog).getByRole("button", { name: "Guardar servicio" }));
 
-  expect(await screen.findByText("Corte de pelo")).toBeInTheDocument();
+  // El servicio recién creado queda elegido en la ficha
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Crear servicio" })).not.toBeInTheDocument(),
+  );
+  expect(servicioEnviado).toEqual({ nombre: "Corte de pelo", costo: "8000" });
+  expect(await within(dialog).findByLabelText("Servicio")).toHaveValue("1");
+  await user.click(within(dialog).getByRole("button", { name: "Agregar servicio" }));
+
+  // 2 x 1.000 (insumo) + 1 x 8.000 (servicio)
+  expect(within(dialog).getByText(/costo de la ficha: 10\.000\sCOP/i)).toBeInTheDocument();
+
+  await user.click(within(dialog).getByRole("button", { name: "Crear ficha técnica" }));
+
+  expect(await screen.findByText("Corte de pelo para hombre")).toBeInTheDocument();
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  expect(enviado).toEqual({
-    nombre: "Corte de pelo",
+  expect(fichaEnviada).toEqual({
+    nombre: "Corte de pelo para hombre",
     precio_venta: "25000",
     impuesto_id: 1,
-    insumos: [
-      { item_id: 10, cantidad: "2" },
-      { item_id: 11, cantidad: "1" },
-    ],
+    insumos: [{ item_id: 10, cantidad: "2" }],
+    servicios: [{ servicio_id: 1, cantidad: "1" }],
   });
 });
 
-it("no deja crear el servicio sin insumos", async () => {
+it("no deja crear la ficha sin insumos ni servicios", async () => {
   mockItems([SHAMPOO]);
   const user = userEvent.setup();
 
   renderPage();
-  await user.click(
-    await screen.findByRole("button", {
-      name: "Crear servicio o ficha técnica",
-    }),
-  );
-  const dialog = await screen.findByRole("dialog");
+  const dialog = await openSheetDialog(user);
 
-  expect(within(dialog).getByRole("button", { name: "Crear servicio" })).toBeDisabled();
+  expect(within(dialog).getByRole("button", { name: "Crear ficha técnica" })).toBeDisabled();
 });
 
 it("avisa cuando no hay productos marcados como insumo", async () => {
@@ -856,26 +877,19 @@ it("avisa cuando no hay productos marcados como insumo", async () => {
   const user = userEvent.setup();
 
   renderPage();
-  await user.click(
-    await screen.findByRole("button", {
-      name: "Crear servicio o ficha técnica",
-    }),
-  );
-  const dialog = await screen.findByRole("dialog");
+  const dialog = await openSheetDialog(user);
 
   expect(within(dialog).getByText(/no tienes productos marcados como insumo/i)).toBeInTheDocument();
 });
 
-it("deja la ventana abierta y muestra el error si crear el servicio falla", async () => {
+it("deja la ventana de la ficha abierta y muestra el error si crearla falla", async () => {
   server.use(
     http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
     http.get(ITEMS_URL, () => HttpResponse.json([SHAMPOO])),
-    http.post(SERVICES_URL, () =>
+    http.get(SERVICES_URL, () => HttpResponse.json([CORTE_SERVICIO])),
+    http.post(SHEETS_URL, () =>
       HttpResponse.json(
-        {
-          error: "business_error",
-          message: "El nombre del servicio es obligatorio",
-        },
+        { error: "business_error", message: "El nombre de la ficha tecnica es obligatorio" },
         { status: 422 },
       ),
     ),
@@ -883,19 +897,38 @@ it("deja la ventana abierta y muestra el error si crear el servicio falla", asyn
   const user = userEvent.setup();
 
   renderPage();
-  await user.click(
-    await screen.findByRole("button", {
-      name: "Crear servicio o ficha técnica",
-    }),
-  );
-  const dialog = await screen.findByRole("dialog");
+  const dialog = await openSheetDialog(user);
   await within(dialog).findByRole("option", { name: "Sin impuesto" });
-  await user.type(within(dialog).getByLabelText(/nombre/i), " ");
-  await user.type(within(dialog).getByLabelText("Cantidad"), "1");
-  await user.click(within(dialog).getByRole("button", { name: "Agregar insumo" }));
-  await user.click(within(dialog).getByRole("button", { name: "Crear servicio" }));
+  await user.type(within(dialog).getByLabelText(/^nombre/i), " ");
+  await user.click(await within(dialog).findByRole("button", { name: "Agregar servicio" }));
+  await user.click(within(dialog).getByRole("button", { name: "Crear ficha técnica" }));
 
   expect(
-    await within(dialog).findByText("El nombre del servicio es obligatorio"),
+    await within(dialog).findByText("El nombre de la ficha tecnica es obligatorio"),
+  ).toBeInTheDocument();
+});
+
+it("deja la ventana del servicio abierta y muestra el error si crearlo falla", async () => {
+  server.use(
+    http.get(TAXES_URL, () => HttpResponse.json([SIN_IMPUESTO])),
+    http.get(ITEMS_URL, () => HttpResponse.json([SHAMPOO])),
+    http.post(SERVICES_URL, () =>
+      HttpResponse.json(
+        { error: "business_error", message: "El nombre del servicio es obligatorio" },
+        { status: 422 },
+      ),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  const dialog = await openSheetDialog(user);
+  await user.click(within(dialog).getByRole("button", { name: "Crear servicio" }));
+  const serviceDialog = await screen.findByRole("dialog", { name: "Crear servicio" });
+  await user.type(within(serviceDialog).getByLabelText(/nombre del servicio/i), " ");
+  await user.click(within(serviceDialog).getByRole("button", { name: "Guardar servicio" }));
+
+  expect(
+    await within(serviceDialog).findByText("El nombre del servicio es obligatorio"),
   ).toBeInTheDocument();
 });
