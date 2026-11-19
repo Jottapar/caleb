@@ -11,11 +11,13 @@ import {
 import { isAxiosError } from "axios";
 import { useState } from "react";
 
+import { TablePagination } from "../../../shared/components/ui/TablePagination";
 import { useItems } from "../../items/hooks/useItems";
 import { useTechnicalSheets } from "../../technicalSheets";
 import { useThirdParties } from "../../thirdParties/hooks/useThirdParties";
 import { CreateReceiptDialog } from "../components/CreateReceiptDialog";
 import { ReceiptDetailDialog } from "../components/ReceiptDetailDialog";
+import { ReceiptFilters } from "../components/ReceiptFilters";
 import { ReceiptTable } from "../components/ReceiptTable";
 import { useCancelReceipt } from "../hooks/useCancelReceipt";
 import { useCreateReceipt } from "../hooks/useCreateReceipt";
@@ -33,6 +35,29 @@ function getErrorMessage(isError: boolean, error: unknown) {
     : ERROR_GENERICO_CREAR;
 }
 
+// Filtra por cliente y por fecha de emisión (desde y hasta, ambas inclusivas). Las fechas son
+// texto "AAAA-MM-DD", así que comparar el texto es comparar las fechas.
+function filterReceipts(
+  receipts: Receipt[],
+  terceroId: string,
+  desde: string,
+  hasta: string,
+) {
+  return receipts.filter(
+    (receipt) =>
+      (!terceroId || receipt.tercero_id === Number(terceroId)) &&
+      (!desde || receipt.fecha >= desde) &&
+      (!hasta || receipt.fecha <= hasta),
+  );
+}
+
+// El más reciente primero: por fecha de emisión y, si empatan, el último creado.
+function sortNewestFirst(receipts: Receipt[]) {
+  return [...receipts].sort(
+    (a, b) => b.fecha.localeCompare(a.fecha) || b.id - a.id,
+  );
+}
+
 export function ReceiptsPage() {
   const receipts = useReceipts();
   const thirdParties = useThirdParties();
@@ -45,6 +70,11 @@ export function ReceiptsPage() {
   const [condicion, setCondicion] = useState("");
   const [fechaVencimiento, setFechaVencimiento] = useState("");
   const [cartLines, setCartLines] = useState<ReceiptCartLine[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [clienteFilter, setClienteFilter] = useState("");
+  const [desdeFilter, setDesdeFilter] = useState("");
+  const [hastaFilter, setHastaFilter] = useState("");
   const [viewingReceipt, setViewingReceipt] = useState<Receipt | null>(null);
   const [cancelingReceipt, setCancelingReceipt] = useState<Receipt | null>(
     null,
@@ -59,6 +89,52 @@ export function ReceiptsPage() {
     (item) => item.se_vende && item.activo,
   );
   const fichasVendibles = (sheets.data ?? []).filter((sheet) => sheet.activo);
+
+  // Primero se filtra y después se pagina: la página se corta del resultado filtrado.
+  const filtered = sortNewestFirst(
+    filterReceipts(
+      receipts.data ?? [],
+      clienteFilter,
+      desdeFilter,
+      hastaFilter,
+    ),
+  );
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  // Si la página en la que estaba ya no existe (por un filtro nuevo), se muestra la última.
+  const currentPage = Math.min(page, totalPages);
+  const pageReceipts = filtered.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize,
+  );
+
+  function handlePageSizeChange(newPageSize: number) {
+    setPageSize(newPageSize);
+    setPage(1);
+  }
+
+  // Con otro filtro los resultados son otros: se empieza desde la primera página.
+  function handleClienteFilterChange(terceroId: string) {
+    setClienteFilter(terceroId);
+    setPage(1);
+  }
+
+  function handleDesdeFilterChange(fecha: string) {
+    setDesdeFilter(fecha);
+    setPage(1);
+  }
+
+  function handleHastaFilterChange(fecha: string) {
+    setHastaFilter(fecha);
+    setPage(1);
+  }
+
+  function handleClearFilters() {
+    setClienteFilter("");
+    setDesdeFilter("");
+    setHastaFilter("");
+    setPage(1);
+  }
 
   function getClienteNombre(terceroId: number) {
     return (
@@ -155,11 +231,37 @@ export function ReceiptsPage() {
       )}
 
       {receipts.data && receipts.data.length > 0 && (
-        <ReceiptTable
-          receipts={receipts.data}
-          getClienteNombre={getClienteNombre}
-          onView={setViewingReceipt}
-        />
+        <>
+          <ReceiptFilters
+            clientes={clientes}
+            terceroId={clienteFilter}
+            desde={desdeFilter}
+            hasta={hastaFilter}
+            onTerceroChange={handleClienteFilterChange}
+            onDesdeChange={handleDesdeFilterChange}
+            onHastaChange={handleHastaFilterChange}
+            onClear={handleClearFilters}
+          />
+          {total === 0 ? (
+            <Text color="fg.muted">Ningún recibo coincide con el filtro.</Text>
+          ) : (
+            <>
+              <ReceiptTable
+                receipts={pageReceipts}
+                getClienteNombre={getClienteNombre}
+                onView={setViewingReceipt}
+              />
+              <TablePagination
+                itemsPerPageLabel="Recibos por página"
+                count={total}
+                page={currentPage}
+                pageSize={pageSize}
+                onPageChange={setPage}
+                onPageSizeChange={handlePageSizeChange}
+              />
+            </>
+          )}
+        </>
       )}
 
       {isCreateDialogOpen && (

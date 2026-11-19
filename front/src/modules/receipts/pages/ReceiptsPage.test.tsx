@@ -721,3 +721,166 @@ it("cierra el detalle del recibo y vuelve al listado", async () => {
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(screen.getByText("R-0001")).toBeInTheDocument();
 });
+
+// ---------- Paginación y filtros de la lista ----------
+const CLIENTE_DOS = { ...CLIENTE, id: 2, nombre: "Cliente Dos" };
+
+function recibo(id: number, terceroId = 1, fecha = "2026-11-11") {
+  return {
+    ...RECIBO,
+    id,
+    tercero_id: terceroId,
+    numero: `R-${String(id).padStart(4, "0")}`,
+    fecha,
+    fecha_vencimiento: fecha,
+  };
+}
+
+function mockLista(recibos: unknown[]) {
+  server.use(
+    http.get(THIRD_PARTIES_URL, () => HttpResponse.json([CLIENTE, CLIENTE_DOS])),
+    http.get(RECEIPTS_URL, () => HttpResponse.json(recibos)),
+  );
+}
+
+// 23 recibos: R-0001 ... R-0023. Los pares son del Cliente Dos (11 en total).
+const VEINTITRES_RECIBOS = Array.from({ length: 23 }, (_, index) =>
+  recibo(index + 1, (index + 1) % 2 === 0 ? 2 : 1),
+);
+
+it("la lista de recibos va paginada de 10 en 10, con el más reciente primero", async () => {
+  mockLista(VEINTITRES_RECIBOS);
+  const user = userEvent.setup();
+
+  renderPage();
+
+  // Misma fecha: el último creado va primero. La primera página trae R-0023 ... R-0014
+  expect(await screen.findByText("R-0023")).toBeInTheDocument();
+  expect(screen.getByText("R-0014")).toBeInTheDocument();
+  expect(screen.queryByText("R-0013")).not.toBeInTheDocument();
+  expect(screen.getByText("Mostrando 1–10 de 23")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: /página siguiente/i }));
+
+  expect(await screen.findByText("R-0013")).toBeInTheDocument();
+  expect(screen.queryByText("R-0023")).not.toBeInTheDocument();
+  expect(screen.getByText("Mostrando 11–20 de 23")).toBeInTheDocument();
+});
+
+it("permite ver 50 recibos por página y solo ofrece 10 y 50", async () => {
+  mockLista(VEINTITRES_RECIBOS);
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("R-0023");
+  const selector = screen.getByRole("combobox", { name: /recibos por página/i });
+  expect(
+    within(selector)
+      .getAllByRole("option")
+      .map((option) => option.textContent),
+  ).toEqual(["10", "50"]);
+  await user.selectOptions(selector, "50");
+
+  expect(screen.getByText("R-0001")).toBeInTheDocument();
+  expect(screen.getByText("Mostrando 1–23 de 23")).toBeInTheDocument();
+});
+
+it("ordena por fecha de emisión, el más reciente primero, aunque se haya creado antes", async () => {
+  mockLista([
+    recibo(1, 1, "2026-11-10"), // creado primero pero emitido más tarde
+    recibo(2, 1, "2026-11-01"),
+    recibo(3, 1, "2026-11-05"),
+  ]);
+
+  renderPage();
+  await screen.findByText("R-0001");
+
+  const numeros = screen
+    .getAllByRole("row")
+    .slice(1) // sin el encabezado
+    .map((fila) => within(fila).getAllByRole("cell")[0].textContent);
+  expect(numeros).toEqual(["R-0001", "R-0003", "R-0002"]);
+});
+
+it("filtra los recibos por cliente", async () => {
+  mockLista([recibo(1, 1), recibo(2, 2), recibo(3, 1)]);
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("R-0002");
+  await user.selectOptions(screen.getByLabelText("Filtrar por cliente"), "Cliente Dos");
+
+  expect(screen.getByText("R-0002")).toBeInTheDocument();
+  expect(screen.queryByText("R-0001")).not.toBeInTheDocument();
+  expect(screen.queryByText("R-0003")).not.toBeInTheDocument();
+});
+
+it("filtra por fecha de emisión con desde y hasta inclusivos", async () => {
+  mockLista([
+    recibo(1, 1, "2026-11-01"),
+    recibo(2, 1, "2026-11-05"),
+    recibo(3, 1, "2026-11-10"),
+    recibo(4, 1, "2026-11-15"),
+  ]);
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("R-0001");
+  await user.type(screen.getByLabelText("Emitido desde"), "2026-11-05");
+  await user.type(screen.getByLabelText("Emitido hasta"), "2026-11-10");
+
+  // Los extremos (05 y 10) entran; el 01 y el 15 no
+  expect(screen.getByText("R-0002")).toBeInTheDocument();
+  expect(screen.getByText("R-0003")).toBeInTheDocument();
+  expect(screen.queryByText("R-0001")).not.toBeInTheDocument();
+  expect(screen.queryByText("R-0004")).not.toBeInTheDocument();
+});
+
+it("combina el filtro de cliente con el de fecha", async () => {
+  mockLista([
+    recibo(1, 1, "2026-11-01"),
+    recibo(2, 2, "2026-11-01"),
+    recibo(3, 2, "2026-11-20"),
+  ]);
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("R-0001");
+  await user.selectOptions(screen.getByLabelText("Filtrar por cliente"), "Cliente Dos");
+  await user.type(screen.getByLabelText("Emitido desde"), "2026-11-10");
+
+  expect(screen.getByText("R-0003")).toBeInTheDocument();
+  expect(screen.queryByText("R-0002")).not.toBeInTheDocument();
+  expect(screen.queryByText("R-0001")).not.toBeInTheDocument();
+});
+
+it("al filtrar vuelve a la primera página y pagina sobre el resultado filtrado", async () => {
+  mockLista(VEINTITRES_RECIBOS);
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("R-0023");
+  await user.click(screen.getByRole("button", { name: /página siguiente/i }));
+  await screen.findByText("Mostrando 11–20 de 23");
+  await user.selectOptions(screen.getByLabelText("Filtrar por cliente"), "Cliente Dos");
+
+  // Son 11 recibos del Cliente Dos: de nuevo la página 1, con 10 de esos 11
+  expect(await screen.findByText("Mostrando 1–10 de 11")).toBeInTheDocument();
+  expect(screen.getByText("R-0022")).toBeInTheDocument();
+});
+
+it("avisa cuando ningún recibo coincide y Limpiar filtros los restablece", async () => {
+  mockLista([recibo(1, 1, "2026-11-01")]);
+  const user = userEvent.setup();
+
+  renderPage();
+  await screen.findByText("R-0001");
+  await user.type(screen.getByLabelText("Emitido desde"), "2026-12-01");
+
+  expect(screen.getByText("Ningún recibo coincide con el filtro.")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Limpiar filtros" }));
+
+  expect(screen.getByText("R-0001")).toBeInTheDocument();
+  expect(screen.getByLabelText("Emitido desde")).toHaveValue("");
+  expect(screen.queryByRole("button", { name: "Limpiar filtros" })).not.toBeInTheDocument();
+});
