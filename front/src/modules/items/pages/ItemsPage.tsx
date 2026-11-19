@@ -1,4 +1,14 @@
-import { Button, Center, Dialog, Drawer, Heading, HStack, Spinner, Stack, Text } from "@chakra-ui/react";
+import {
+  Button,
+  Center,
+  Dialog,
+  Drawer,
+  Heading,
+  HStack,
+  Spinner,
+  Stack,
+  Text,
+} from "@chakra-ui/react";
 import { isAxiosError } from "axios";
 import { useState } from "react";
 
@@ -6,9 +16,14 @@ import { TablePagination } from "../../../shared/components/ui/TablePagination";
 import { normalizeText } from "../../../shared/lib/normalizeText";
 import {
   CreateTechnicalSheetDialog,
+  EditTechnicalSheetDrawer,
+  type TechnicalSheet,
   type TechnicalSheetCreate,
   useCreateTechnicalSheet,
+  useDeleteTechnicalSheet,
+  useSetTechnicalSheetActive,
   useTechnicalSheets,
+  useUpdateTechnicalSheet,
 } from "../../technicalSheets";
 import { AddStockCartDialog } from "../components/AddStockCartDialog";
 import { ItemFilters, type UseFilter } from "../components/ItemFilters";
@@ -19,14 +34,30 @@ import { useCreateItem } from "../hooks/useCreateItem";
 import { useDeleteItem } from "../hooks/useDeleteItem";
 import { useItems } from "../hooks/useItems";
 import { useUpdateItem } from "../hooks/useUpdateItem";
-import type { Item, ItemCreate, ItemUpdate, ProductRow, StockCartLine } from "../types";
+import type {
+  Item,
+  ItemCreate,
+  ItemUpdate,
+  ProductRow,
+  StockCartLine,
+} from "../types";
 
-const ERROR_GENERICO_GUARDAR = "No se pudo guardar el producto. Intenta de nuevo.";
-const ERROR_GENERICO_ELIMINAR = "No se pudo eliminar el producto. Intenta de nuevo.";
-const ERROR_GENERICO_AGREGAR = "No se pudo actualizar las existencias. Intenta de nuevo.";
-const ERROR_GENERICO_FICHA = "No se pudo crear la ficha técnica. Intenta de nuevo.";
+const ERROR_GENERICO_GUARDAR =
+  "No se pudo guardar el producto. Intenta de nuevo.";
+const ERROR_GENERICO_ELIMINAR =
+  "No se pudo eliminar el producto. Intenta de nuevo.";
+const ERROR_GENERICO_AGREGAR =
+  "No se pudo actualizar las existencias. Intenta de nuevo.";
+const ERROR_GENERICO_EDITAR_FICHA =
+  "No se pudo editar la ficha técnica. Intenta de nuevo.";
+const ERROR_GENERICO_FICHA =
+  "No se pudo crear la ficha técnica. Intenta de nuevo.";
 
-function getErrorMessage(isError: boolean, error: unknown, errorGenerico = ERROR_GENERICO_GUARDAR) {
+function getErrorMessage(
+  isError: boolean,
+  error: unknown,
+  errorGenerico = ERROR_GENERICO_GUARDAR,
+) {
   if (!isError) {
     return null;
   }
@@ -59,14 +90,21 @@ export function ItemsPage() {
   const items = useItems();
   const sheets = useTechnicalSheets();
   const createSheet = useCreateTechnicalSheet();
+  const updateSheet = useUpdateTechnicalSheet();
+  const setSheetActive = useSetTechnicalSheetActive();
+  const deleteSheet = useDeleteTechnicalSheet();
   const createItem = useCreateItem();
   const updateItem = useUpdateItem();
   const deleteItem = useDeleteItem();
   const addStockBulk = useAddStockBulk();
   const [creating, setCreating] = useState(false);
   const [creatingSheet, setCreatingSheet] = useState(false);
+  const [editingSheet, setEditingSheet] = useState<TechnicalSheet | null>(null);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [deletingItem, setDeletingItem] = useState<Item | null>(null);
+  const [deletingSheet, setDeletingSheet] = useState<TechnicalSheet | null>(
+    null,
+  );
   const [isAddStockDialogOpen, setIsAddStockDialogOpen] = useState(false);
   const [cartLines, setCartLines] = useState<StockCartLine[]>([]);
   const [page, setPage] = useState(1);
@@ -77,10 +115,15 @@ export function ItemsPage() {
   // Productos y fichas tecnicas van en la misma tabla: primero los productos, despues las fichas.
   const rows: ProductRow[] = [
     ...(items.data ?? []).map((item): ProductRow => ({ kind: "item", item })),
-    ...(sheets.data ?? []).map((sheet): ProductRow => ({ kind: "sheet", sheet })),
+    ...(sheets.data ?? []).map((sheet): ProductRow => ({
+      kind: "sheet",
+      sheet,
+    })),
   ];
   // Solo los productos activos marcados como insumo pueden entrar en una ficha tecnica.
-  const supplies = (items.data ?? []).filter((item) => item.es_insumo && item.activo);
+  const supplies = (items.data ?? []).filter(
+    (item) => item.es_insumo && item.activo,
+  );
   const isPending = items.isPending || sheets.isPending;
   const isError = items.isError || sheets.isError;
   const hasData = Boolean(items.data && sheets.data);
@@ -93,7 +136,10 @@ export function ItemsPage() {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   // Si al eliminar se vacia la ultima pagina, se muestra la anterior en vez de una vacia.
   const currentPage = Math.min(page, totalPages);
-  const pageItems = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const pageItems = filtered.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize,
+  );
 
   function handlePageSizeChange(newPageSize: number) {
     setPageSize(newPageSize);
@@ -112,9 +158,12 @@ export function ItemsPage() {
     setPage(1);
   }
 
+  // El mismo diálogo sirve para eliminar un producto o una ficha: solo uno de los dos está elegido.
+  const deletingName = deletingItem?.nombre ?? deletingSheet?.nombre ?? "";
+  const activeDelete = deletingSheet ? deleteSheet : deleteItem;
   const deleteErrorMessage = getErrorMessage(
-    deleteItem.isError,
-    deleteItem.error,
+    activeDelete.isError,
+    activeDelete.error,
     ERROR_GENERICO_ELIMINAR,
   );
 
@@ -133,6 +182,21 @@ export function ItemsPage() {
     createSheet.mutate(data, { onSuccess: () => setCreatingSheet(false) });
   }
 
+  function handleOpenEditSheet(sheet: TechnicalSheet) {
+    updateSheet.reset();
+    setEditingSheet(sheet);
+  }
+
+  function handleUpdateSheet(data: TechnicalSheetCreate) {
+    if (!editingSheet) {
+      return;
+    }
+    updateSheet.mutate(
+      { id: editingSheet.id, data },
+      { onSuccess: () => setEditingSheet(null) },
+    );
+  }
+
   // La ventana se cierra solo si el backend guardó: si falla, queda abierta con los
   // datos escritos y el error a la vista para que el usuario corrija.
   function handleCreate(data: ItemCreate) {
@@ -147,16 +211,28 @@ export function ItemsPage() {
     if (!editingItem) {
       return;
     }
-    updateItem.mutate({ id: editingItem.id, data }, { onSuccess: () => setEditingItem(null) });
+    updateItem.mutate(
+      { id: editingItem.id, data },
+      { onSuccess: () => setEditingItem(null) },
+    );
   }
 
   function handleCloseDeleteDialog() {
     setDeletingItem(null);
+    setDeletingSheet(null);
     deleteItem.reset();
+    deleteSheet.reset();
+  }
+
+  function handleToggleSheetActive(sheet: TechnicalSheet, activo: boolean) {
+    setSheetActive.mutate({ id: sheet.id, activo });
   }
 
   function handleAddCartLine(linea: StockCartLine) {
-    setCartLines((lineas) => [...lineas.filter((l) => l.itemId !== linea.itemId), linea]);
+    setCartLines((lineas) => [
+      ...lineas.filter((l) => l.itemId !== linea.itemId),
+      linea,
+    ]);
   }
 
   function handleRemoveCartLine(itemId: number) {
@@ -164,12 +240,17 @@ export function ItemsPage() {
   }
 
   function handleConfirmDelete() {
-    if (!deletingItem) {
+    if (deletingSheet) {
+      deleteSheet.mutate(deletingSheet.id, {
+        onSuccess: () => setDeletingSheet(null),
+      });
       return;
     }
-    deleteItem.mutate(deletingItem.id, {
-      onSuccess: () => setDeletingItem(null),
-    });
+    if (deletingItem) {
+      deleteItem.mutate(deletingItem.id, {
+        onSuccess: () => setDeletingItem(null),
+      });
+    }
   }
 
   function handleCloseAddStockDialog() {
@@ -191,7 +272,10 @@ export function ItemsPage() {
       <HStack justify="space-between">
         <Heading size="xl">Productos</Heading>
         <HStack>
-          <Button variant="outline" onClick={() => setIsAddStockDialogOpen(true)}>
+          <Button
+            variant="outline"
+            onClick={() => setIsAddStockDialogOpen(true)}
+          >
             Agregar existencias
           </Button>
           <Button variant="outline" onClick={handleOpenCreateSheet}>
@@ -209,7 +293,11 @@ export function ItemsPage() {
         </Center>
       )}
 
-      {isError && <Text color="fg.error">No pudimos cargar tus productos. Intenta de nuevo.</Text>}
+      {isError && (
+        <Text color="fg.error">
+          No pudimos cargar tus productos. Intenta de nuevo.
+        </Text>
+      )}
 
       {hasData && rows.length === 0 && (
         <Text color="fg.muted">No tienes productos registrados todavía.</Text>
@@ -224,12 +312,17 @@ export function ItemsPage() {
             onUseChange={handleUseFilterChange}
           />
           {total === 0 ? (
-            <Text color="fg.muted">Ningún producto coincide con el filtro.</Text>
+            <Text color="fg.muted">
+              Ningún producto coincide con el filtro.
+            </Text>
           ) : (
             <>
               <ItemTable
                 rows={pageItems}
                 onEdit={setEditingItem}
+                onEditSheet={handleOpenEditSheet}
+                onToggleSheetActive={handleToggleSheetActive}
+                onDeleteSheet={setDeletingSheet}
                 onToggleActive={handleToggleActive}
                 onDelete={setDeletingItem}
               />
@@ -247,7 +340,10 @@ export function ItemsPage() {
       )}
 
       {creating && (
-        <Dialog.Root open onOpenChange={(details) => !details.open && setCreating(false)}>
+        <Dialog.Root
+          open
+          onOpenChange={(details) => !details.open && setCreating(false)}
+        >
           <Dialog.Backdrop />
           <Dialog.Positioner>
             <Dialog.Content>
@@ -259,7 +355,10 @@ export function ItemsPage() {
                   onSubmit={handleCreate}
                   onCancel={() => setCreating(false)}
                   isSubmitting={createItem.isPending}
-                  errorMessage={getErrorMessage(createItem.isError, createItem.error)}
+                  errorMessage={getErrorMessage(
+                    createItem.isError,
+                    createItem.error,
+                  )}
                 />
               </Dialog.Body>
             </Dialog.Content>
@@ -286,7 +385,10 @@ export function ItemsPage() {
                   onSubmit={handleUpdate}
                   onCancel={() => setEditingItem(null)}
                   isSubmitting={updateItem.isPending}
-                  errorMessage={getErrorMessage(updateItem.isError, updateItem.error)}
+                  errorMessage={getErrorMessage(
+                    updateItem.isError,
+                    updateItem.error,
+                  )}
                 />
               </Drawer.Body>
             </Drawer.Content>
@@ -294,7 +396,7 @@ export function ItemsPage() {
         </Drawer.Root>
       )}
 
-      {deletingItem && (
+      {(deletingItem || deletingSheet) && (
         <Dialog.Root
           role="alertdialog"
           open
@@ -304,12 +406,12 @@ export function ItemsPage() {
           <Dialog.Positioner>
             <Dialog.Content>
               <Dialog.Header>
-                <Dialog.Title>Eliminar {deletingItem.nombre}</Dialog.Title>
+                <Dialog.Title>Eliminar {deletingName}</Dialog.Title>
               </Dialog.Header>
               <Dialog.Body>
                 <Text>
-                  ¿Seguro que quieres eliminar {deletingItem.nombre}? Esta acción no se puede
-                  deshacer.
+                  ¿Seguro que quieres eliminar {deletingName}? Esta acción no se
+                  puede deshacer.
                 </Text>
                 {deleteErrorMessage && (
                   <Text color="fg.error" mt="2">
@@ -324,7 +426,7 @@ export function ItemsPage() {
                   </Button>
                   <Button
                     colorPalette="red"
-                    loading={deleteItem.isPending}
+                    loading={activeDelete.isPending}
                     onClick={handleConfirmDelete}
                   >
                     Eliminar
@@ -342,7 +444,26 @@ export function ItemsPage() {
           onSubmit={handleCreateSheet}
           onClose={() => setCreatingSheet(false)}
           isSubmitting={createSheet.isPending}
-          errorMessage={getErrorMessage(createSheet.isError, createSheet.error, ERROR_GENERICO_FICHA)}
+          errorMessage={getErrorMessage(
+            createSheet.isError,
+            createSheet.error,
+            ERROR_GENERICO_FICHA,
+          )}
+        />
+      )}
+
+      {editingSheet && (
+        <EditTechnicalSheetDrawer
+          sheet={editingSheet}
+          supplies={supplies}
+          onSubmit={handleUpdateSheet}
+          onClose={() => setEditingSheet(null)}
+          isSubmitting={updateSheet.isPending}
+          errorMessage={getErrorMessage(
+            updateSheet.isError,
+            updateSheet.error,
+            ERROR_GENERICO_EDITAR_FICHA,
+          )}
         />
       )}
 

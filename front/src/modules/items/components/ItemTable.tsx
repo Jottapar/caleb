@@ -2,15 +2,27 @@ import { Button, Switch, Table } from "@chakra-ui/react";
 
 import { formatCop, formatStock } from "../../../shared/lib/formatters";
 import type { Item, ProductRow } from "../types";
+import type { TechnicalSheet } from "../../technicalSheets";
 
 type Props = {
   rows: ProductRow[];
   onEdit: (item: Item) => void;
+  onEditSheet: (sheet: TechnicalSheet) => void;
+  onToggleSheetActive: (sheet: TechnicalSheet, activo: boolean) => void;
+  onDeleteSheet: (sheet: TechnicalSheet) => void;
   onToggleActive: (item: Item, activo: boolean) => void;
   onDelete: (item: Item) => void;
 };
 
-export function ItemTable({ rows, onEdit, onToggleActive, onDelete }: Props) {
+export function ItemTable({
+  rows,
+  onEdit,
+  onEditSheet,
+  onToggleSheetActive,
+  onDeleteSheet,
+  onToggleActive,
+  onDelete,
+}: Props) {
   return (
     <Table.Root>
       <Table.Header>
@@ -28,15 +40,42 @@ export function ItemTable({ rows, onEdit, onToggleActive, onDelete }: Props) {
         {rows.map((row) =>
           row.kind === "sheet" ? (
             // Una ficha tecnica no tiene existencias propias: gasta las de sus insumos al venderse.
-            // Editarla, activarla y eliminarla llegan en una parte siguiente.
             <Table.Row key={`sheet-${row.sheet.id}`}>
               <Table.Cell>{row.sheet.codigo}</Table.Cell>
               <Table.Cell>{row.sheet.nombre}</Table.Cell>
               <Table.Cell>{formatCop(row.sheet.costo)}</Table.Cell>
               <Table.Cell>{formatCop(row.sheet.precio_venta)}</Table.Cell>
               <Table.Cell color="fg.muted">—</Table.Cell>
-              <Table.Cell></Table.Cell>
-              <Table.Cell></Table.Cell>
+              <Table.Cell>
+                <Switch.Root
+                  checked={row.sheet.activo}
+                  onCheckedChange={(details) =>
+                    onToggleSheetActive(row.sheet, details.checked)
+                  }
+                >
+                  <Switch.HiddenInput />
+                  <Switch.Control>
+                    <Switch.Thumb />
+                  </Switch.Control>
+                </Switch.Root>
+              </Table.Cell>
+              <Table.Cell>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onEditSheet(row.sheet)}
+                >
+                  Editar
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  colorPalette="red"
+                  onClick={() => onDeleteSheet(row.sheet)}
+                >
+                  Eliminar
+                </Button>
+              </Table.Cell>
             </Table.Row>
           ) : (
             <Table.Row key={`item-${row.item.id}`}>
@@ -48,7 +87,9 @@ export function ItemTable({ rows, onEdit, onToggleActive, onDelete }: Props) {
               <Table.Cell>
                 <Switch.Root
                   checked={row.item.activo}
-                  onCheckedChange={(details) => onToggleActive(row.item, details.checked)}
+                  onCheckedChange={(details) =>
+                    onToggleActive(row.item, details.checked)
+                  }
                 >
                   <Switch.HiddenInput />
                   <Switch.Control>
@@ -57,7 +98,11 @@ export function ItemTable({ rows, onEdit, onToggleActive, onDelete }: Props) {
                 </Switch.Root>
               </Table.Cell>
               <Table.Cell>
-                <Button size="sm" variant="ghost" onClick={() => onEdit(row.item)}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onEdit(row.item)}
+                >
                   Editar
                 </Button>
                 <Button

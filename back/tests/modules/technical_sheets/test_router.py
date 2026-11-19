@@ -255,3 +255,206 @@ def test_list_sheets_requires_authentication(client):
     response = client.get(URL)
 
     assert response.status_code == 401
+
+
+def _put(logged_in_client, session, sheet_id, **overrides):
+    body = {
+        "nombre": "Corte editado",
+        "impuesto_id": _sin_impuesto_id(session),
+        "precio_venta": "30000",
+    }
+    body.update(overrides)
+    return logged_in_client.put(
+        f"{URL}/{sheet_id}", json=body, headers=_csrf_headers(logged_in_client)
+    )
+
+
+def test_update_sheet_changes_header_and_replaces_all_lines(logged_in_client, session):
+    gel = _insumo(session, "Gel", 1000)
+    cera = _insumo(session, "Cera", 2000)
+    corte = _servicio(session, costo=8000)
+    lavado = _servicio(session, nombre="Lavado", costo=3000)
+    creada = _post(
+        logged_in_client,
+        session,
+        insumos=[{"item_id": gel.id, "cantidad": "0.1"}],
+        servicios=[{"servicio_id": corte.id, "cantidad": "1"}],
+    ).json()
+
+    response = _put(
+        logged_in_client,
+        session,
+        creada["id"],
+        insumos=[{"item_id": cera.id, "cantidad": "2"}],
+        servicios=[{"servicio_id": lavado.id, "cantidad": "1"}],
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == creada["id"]
+    assert body["codigo"] == "F-0001"  # el codigo no cambia
+    assert body["nombre"] == "Corte editado"
+    assert body["precio_venta"] == "30000.00"
+    assert [i["nombre"] for i in body["insumos"]] == ["Cera"]
+    assert [s["nombre"] for s in body["servicios"]] == ["Lavado"]
+    # 2 x 2000 + 1 x 3000: las lineas viejas ya no cuentan
+    assert body["costo"] == "7000.00"
+
+
+def test_update_sheet_can_remove_all_supplies_if_a_service_remains(logged_in_client, session):
+    gel = _insumo(session, "Gel", 1000)
+    corte = _servicio(session)
+    creada = _post(
+        logged_in_client,
+        session,
+        insumos=[{"item_id": gel.id, "cantidad": "1"}],
+        servicios=[{"servicio_id": corte.id}],
+    ).json()
+
+    response = _put(
+        logged_in_client, session, creada["id"], servicios=[{"servicio_id": corte.id}]
+    )
+
+    assert response.status_code == 200
+    assert response.json()["insumos"] == []
+
+
+def test_update_sheet_rejects_without_any_line_and_keeps_the_old_ones(logged_in_client, session):
+    corte = _servicio(session)
+    creada = _post(logged_in_client, session, servicios=[{"servicio_id": corte.id}]).json()
+
+    response = _put(logged_in_client, session, creada["id"])
+
+    assert response.status_code == 422
+    listadas = logged_in_client.get(URL).json()
+    assert [s["nombre"] for s in listadas[0]["servicios"]] == ["Corte de pelo"]
+
+
+def test_update_sheet_rejects_repeated_supply(logged_in_client, session):
+    gel = _insumo(session, "Gel", 1000)
+    creada = _post(
+        logged_in_client, session, insumos=[{"item_id": gel.id, "cantidad": "1"}]
+    ).json()
+
+    response = _put(
+        logged_in_client,
+        session,
+        creada["id"],
+        insumos=[{"item_id": gel.id, "cantidad": "1"}, {"item_id": gel.id, "cantidad": "2"}],
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_sheet_rejects_empty_name(logged_in_client, session):
+    corte = _servicio(session)
+    creada = _post(logged_in_client, session, servicios=[{"servicio_id": corte.id}]).json()
+
+    response = _put(
+        logged_in_client,
+        session,
+        creada["id"],
+        nombre="  ",
+        servicios=[{"servicio_id": corte.id}],
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_sheet_returns_404_if_it_does_not_exist(logged_in_client, session):
+    corte = _servicio(session)
+
+    response = _put(logged_in_client, session, 999, servicios=[{"servicio_id": corte.id}])
+
+    assert response.status_code == 404
+
+
+def test_update_sheet_requires_authentication(client):
+    response = client.put(f"{URL}/1", json={})
+
+    assert response.status_code == 401
+
+
+def test_deactivate_and_reactivate_sheet(logged_in_client, session):
+    corte = _servicio(session)
+    creada = _post(logged_in_client, session, servicios=[{"servicio_id": corte.id}]).json()
+    headers = _csrf_headers(logged_in_client)
+
+    off = logged_in_client.patch(f"{URL}/{creada['id']}", json={"activo": False}, headers=headers)
+    on = logged_in_client.patch(f"{URL}/{creada['id']}", json={"activo": True}, headers=headers)
+
+    assert off.status_code == 200
+    assert off.json()["activo"] is False
+    # Desactivar no toca nada mas: las lineas siguen ahi
+    assert [s["nombre"] for s in off.json()["servicios"]] == ["Corte de pelo"]
+    assert on.json()["activo"] is True
+
+
+def test_set_active_returns_404_if_it_does_not_exist(logged_in_client):
+    response = logged_in_client.patch(
+        f"{URL}/999", json={"activo": False}, headers=_csrf_headers(logged_in_client)
+    )
+
+    assert response.status_code == 404
+
+
+def test_delete_sheet_returns_204_and_removes_it_with_its_lines(logged_in_client, session):
+    gel = _insumo(session, "Gel", 1000)
+    corte = _servicio(session)
+    creada = _post(
+        logged_in_client,
+        session,
+        insumos=[{"item_id": gel.id, "cantidad": "1"}],
+        servicios=[{"servicio_id": corte.id}],
+    ).json()
+
+    response = logged_in_client.delete(
+        f"{URL}/{creada['id']}", headers=_csrf_headers(logged_in_client)
+    )
+
+    assert response.status_code == 204
+    assert logged_in_client.get(URL).json() == []
+    # El insumo y el servicio son del catalogo: siguen existiendo
+    assert [i["nombre"] for i in logged_in_client.get("/api/v1/items").json()] == ["Gel"]
+    assert [s["nombre"] for s in logged_in_client.get("/api/v1/services").json()] == [
+        "Corte de pelo"
+    ]
+
+
+def test_delete_sheet_from_other_company_returns_404(logged_in_client, session):
+    otra = Company(nombre="Otra empresa")
+    session.add(otra)
+    session.flush()
+    otro_impuesto = Tax(empresa_id=otra.id, nombre="Sin impuesto", porcentaje=0)
+    session.add(otro_impuesto)
+    session.flush()
+    ajeno_servicio = services_service.create_service(
+        session, otra.id, ServiceCreate(nombre="Ajeno", costo=Decimal(1))
+    )
+    from app.modules.technical_sheets import service as sheets_service
+    from app.modules.technical_sheets.schemas import (
+        SheetServiceLineCreate,
+        TechnicalSheetCreate,
+    )
+
+    ajena = sheets_service.create_technical_sheet(
+        session,
+        otra.id,
+        TechnicalSheetCreate(
+            nombre="Ficha ajena",
+            impuesto_id=otro_impuesto.id,
+            servicios=[SheetServiceLineCreate(servicio_id=ajeno_servicio.id)],
+        ),
+    )
+
+    response = logged_in_client.delete(
+        f"{URL}/{ajena.id}", headers=_csrf_headers(logged_in_client)
+    )
+
+    assert response.status_code == 404
+
+
+def test_delete_sheet_returns_404_if_it_does_not_exist(logged_in_client):
+    response = logged_in_client.delete(f"{URL}/999", headers=_csrf_headers(logged_in_client))
+
+    assert response.status_code == 404

@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from sqlmodel import Session, select
 
-from app.core.errors import BusinessError
+from app.core.errors import BusinessError, NotFoundError
 from app.core.logger import logger
 from app.modules.items.models import Item
 from app.modules.services.models import Service
@@ -123,10 +123,8 @@ def _to_read(session: Session, sheet: TechnicalSheet) -> TechnicalSheetRead:
     )
 
 
-def create_technical_sheet(
-    session: Session, empresa_id: int, data: TechnicalSheetCreate
-) -> TechnicalSheetRead:
-    logger.debug(f"Creando ficha tecnica {data.nombre}")
+def _validate_sheet_data(session: Session, empresa_id: int, data: TechnicalSheetCreate) -> None:
+    """Las reglas de una ficha, las mismas al crearla y al editarla."""
     if not data.nombre.strip():
         raise BusinessError("El nombre de la ficha tecnica es obligatorio")
     if data.precio_venta < 0:
@@ -136,6 +134,36 @@ def create_technical_sheet(
     _validate_tax(session, data.impuesto_id, empresa_id)
     _validate_supplies(session, data.insumos, empresa_id)
     _validate_services(session, data.servicios, empresa_id)
+
+
+def _add_lines(
+    session: Session, empresa_id: int, sheet_id: int, data: TechnicalSheetCreate
+) -> None:
+    for linea in data.insumos:
+        session.add(
+            TechnicalSheetItemLine(
+                empresa_id=empresa_id,
+                ficha_tecnica_id=sheet_id,
+                item_id=linea.item_id,
+                cantidad=linea.cantidad,
+            )
+        )
+    for linea in data.servicios:
+        session.add(
+            TechnicalSheetServiceLine(
+                empresa_id=empresa_id,
+                ficha_tecnica_id=sheet_id,
+                servicio_id=linea.servicio_id,
+                cantidad=linea.cantidad,
+            )
+        )
+
+
+def create_technical_sheet(
+    session: Session, empresa_id: int, data: TechnicalSheetCreate
+) -> TechnicalSheetRead:
+    logger.debug(f"Creando ficha tecnica {data.nombre}")
+    _validate_sheet_data(session, empresa_id, data)
 
     sheet = TechnicalSheet(
         empresa_id=empresa_id,
@@ -148,24 +176,7 @@ def create_technical_sheet(
     # flush asigna el id de la ficha sin cerrar la transaccion: las lineas se guardan en el mismo commit
     session.flush()
 
-    for linea in data.insumos:
-        session.add(
-            TechnicalSheetItemLine(
-                empresa_id=empresa_id,
-                ficha_tecnica_id=sheet.id,
-                item_id=linea.item_id,
-                cantidad=linea.cantidad,
-            )
-        )
-    for linea in data.servicios:
-        session.add(
-            TechnicalSheetServiceLine(
-                empresa_id=empresa_id,
-                ficha_tecnica_id=sheet.id,
-                servicio_id=linea.servicio_id,
-                cantidad=linea.cantidad,
-            )
-        )
+    _add_lines(session, empresa_id, sheet.id, data)
 
     session.commit()
     session.refresh(sheet)
@@ -180,3 +191,83 @@ def list_technical_sheets(session: Session, empresa_id: int) -> list[TechnicalSh
         .order_by(TechnicalSheet.id)
     ).all()
     return [_to_read(session, sheet) for sheet in sheets]
+
+
+def get_by_id(session: Session, sheet_id: int, empresa_id: int) -> TechnicalSheet:
+    # Filtrar por empresa hace que una ficha de otra empresa se trate como inexistente
+    sheet = session.exec(
+        select(TechnicalSheet).where(
+            TechnicalSheet.id == sheet_id, TechnicalSheet.empresa_id == empresa_id
+        )
+    ).first()
+    if not sheet:
+        raise NotFoundError("Ficha tecnica", sheet_id)
+    return sheet
+
+
+def update_technical_sheet(
+    session: Session, sheet_id: int, empresa_id: int, data: TechnicalSheetCreate
+) -> TechnicalSheetRead:
+    logger.debug(f"Editando ficha tecnica id={sheet_id}")
+    sheet = get_by_id(session, sheet_id, empresa_id)
+    _validate_sheet_data(session, empresa_id, data)
+
+    sheet.nombre = data.nombre.strip()
+    sheet.precio_venta = data.precio_venta
+    sheet.impuesto_id = data.impuesto_id
+    session.add(sheet)
+
+    # Las lineas se reemplazan completas: se borran las viejas y se crean las que llegan,
+    # todo en el mismo commit. Si algo falla, la ficha queda como estaba.
+    for linea in session.exec(
+        select(TechnicalSheetItemLine).where(TechnicalSheetItemLine.ficha_tecnica_id == sheet.id)
+    ).all():
+        session.delete(linea)
+    for linea in session.exec(
+        select(TechnicalSheetServiceLine).where(
+            TechnicalSheetServiceLine.ficha_tecnica_id == sheet.id
+        )
+    ).all():
+        session.delete(linea)
+    # flush ejecuta los DELETE antes de los INSERT
+    session.flush()
+    _add_lines(session, empresa_id, sheet.id, data)
+
+    session.commit()
+    session.refresh(sheet)
+    logger.info(f"Ficha tecnica editada | id={sheet.id} codigo={sheet.codigo}")
+    return _to_read(session, sheet)
+
+
+def set_active(
+    session: Session, sheet_id: int, empresa_id: int, activo: bool
+) -> TechnicalSheetRead:
+    sheet = get_by_id(session, sheet_id, empresa_id)
+    sheet.activo = activo
+    session.add(sheet)
+    session.commit()
+    session.refresh(sheet)
+    logger.info(f"Ficha tecnica {'activada' if activo else 'desactivada'} | id={sheet.id}")
+    return _to_read(session, sheet)
+
+
+def delete_technical_sheet(session: Session, sheet_id: int, empresa_id: int) -> None:
+    sheet = get_by_id(session, sheet_id, empresa_id)
+    # TODO(recibo de fichas): cuando exista recibo_lineas_fichas, rechazar aqui si la ficha
+    # ya esta en un recibo (ver 02. Reglas del Negocio). Hoy ningun recibo usa fichas.
+
+    # Las lineas dependen de la ficha por llave foranea: se borran primero, en el mismo commit.
+    for linea in session.exec(
+        select(TechnicalSheetItemLine).where(TechnicalSheetItemLine.ficha_tecnica_id == sheet.id)
+    ).all():
+        session.delete(linea)
+    for linea in session.exec(
+        select(TechnicalSheetServiceLine).where(
+            TechnicalSheetServiceLine.ficha_tecnica_id == sheet.id
+        )
+    ).all():
+        session.delete(linea)
+    session.flush()
+    session.delete(sheet)
+    session.commit()
+    logger.info(f"Ficha tecnica eliminada | id={sheet_id}")

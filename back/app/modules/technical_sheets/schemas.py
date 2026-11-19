@@ -22,6 +22,10 @@ class TechnicalSheetCreate(SQLModel):
     servicios: list[SheetServiceLineCreate] = []
 
 
+class TechnicalSheetActiveUpdate(SQLModel):
+    activo: bool
+
+
 class SheetItemLineRead(SQLModel):
     item_id: int
     codigo: str
