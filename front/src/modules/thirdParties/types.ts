@@ -1,4 +1,5 @@
-export type ThirdPartyType = "cliente" | "proveedor" | "ambos";
+// Sin "ambos": quien es cliente y proveedor se registra dos veces, una con cada tipo.
+export type ThirdPartyType = "cliente" | "proveedor";
 
 export type AccountType = "ahorros" | "corriente";
 

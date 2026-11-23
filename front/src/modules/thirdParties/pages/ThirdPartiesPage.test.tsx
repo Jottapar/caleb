@@ -14,16 +14,17 @@ const BANKS = [
   { id: 2, nombre: "Davivienda" },
 ];
 
-function renderPage() {
+// La mayoria de los tests usa la pantalla de Clientes; los de abajo prueban tambien Proveedores.
+function renderPage(tipo: "cliente" | "proveedor" = "cliente") {
   // El formulario siempre pide la lista de bancos para el desplegable.
   server.use(http.get(BANKS_URL, () => HttpResponse.json(BANKS)));
-  renderWithProviders([{ path: "/", element: <ThirdPartiesPage /> }]);
+  renderWithProviders([{ path: "/", element: <ThirdPartiesPage tipo={tipo} /> }]);
 }
 
 // El formulario de crear vive en una ventana: hay que abrirla con el botón.
 async function openCreateDialog(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(await screen.findByRole("button", { name: /crear cliente o proveedor/i }));
-  await screen.findByRole("heading", { name: /crear cliente o proveedor/i });
+  await user.click(await screen.findByRole("button", { name: /crear cliente/i }));
+  await screen.findByRole("heading", { name: /crear cliente/i });
 }
 
 it("muestra la lista de terceros que devuelve la API", async () => {
@@ -55,7 +56,7 @@ it("muestra un mensaje cuando no hay terceros", async () => {
 
   renderPage();
 
-  expect(await screen.findByText(/no tienes terceros registrados/i)).toBeInTheDocument();
+  expect(await screen.findByText(/no tienes clientes registrados/i)).toBeInTheDocument();
 });
 
 it("registra un tercero y lo agrega a la lista", async () => {
@@ -79,7 +80,7 @@ it("registra un tercero y lo agrega a la lista", async () => {
   // La ventana se cierra al guardar y el tercero aparece en la lista.
   expect(await screen.findByText("Carlos")).toBeInTheDocument();
   await vi.waitFor(() =>
-    expect(screen.queryByRole("heading", { name: /crear cliente o proveedor/i })).not.toBeInTheDocument(),
+    expect(screen.queryByRole("heading", { name: /crear cliente/i })).not.toBeInTheDocument(),
   );
 });
 
@@ -92,7 +93,7 @@ it("la ventana de crear se cierra con Cerrar sin guardar nada", async () => {
   await user.click(screen.getByRole("button", { name: /cerrar/i }));
 
   await vi.waitFor(() =>
-    expect(screen.queryByRole("heading", { name: /crear cliente o proveedor/i })).not.toBeInTheDocument(),
+    expect(screen.queryByRole("heading", { name: /crear cliente/i })).not.toBeInTheDocument(),
   );
 });
 
@@ -114,7 +115,7 @@ it("muestra el error del backend cuando el nombre esta vacio", async () => {
 
   // Con error la ventana queda abierta para que el usuario corrija.
   expect(await screen.findByText("El nombre del tercero es obligatorio")).toBeInTheDocument();
-  expect(screen.getByRole("heading", { name: /crear cliente o proveedor/i })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: /crear cliente/i })).toBeInTheDocument();
 });
 
 const ANA = {
@@ -136,7 +137,7 @@ it("abre el drawer con los datos del tercero al hacer click en Editar", async ()
   renderPage();
   await user.click(await screen.findByRole("button", { name: /editar/i }));
 
-  expect(await screen.findByRole("heading", { name: /editar tercero/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /editar cliente/i })).toBeInTheDocument();
   expect(screen.getAllByDisplayValue("Ana Pérez")).toHaveLength(1);
 });
 
@@ -208,10 +209,10 @@ it("cierra el drawer sin guardar al hacer click en Cerrar", async () => {
 
   renderPage();
   await user.click(await screen.findByRole("button", { name: /editar/i }));
-  await screen.findByRole("heading", { name: /editar tercero/i });
+  await screen.findByRole("heading", { name: /editar cliente/i });
   await user.click(screen.getByRole("button", { name: /cerrar/i }));
 
-  expect(screen.queryByRole("heading", { name: /editar tercero/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: /editar cliente/i })).not.toBeInTheDocument();
 });
 
 it("elimina un tercero al confirmar en el dialogo", async () => {
@@ -230,7 +231,7 @@ it("elimina un tercero al confirmar en el dialogo", async () => {
   const dialog = await screen.findByRole("alertdialog");
   await user.click(within(dialog).getByRole("button", { name: /eliminar/i }));
 
-  expect(await screen.findByText(/no tienes terceros registrados/i)).toBeInTheDocument();
+  expect(await screen.findByText(/no tienes clientes registrados/i)).toBeInTheDocument();
 });
 
 it("muestra el error del backend cuando la eliminacion falla", async () => {
@@ -341,7 +342,7 @@ it("al editar muestra la cuenta bancaria que ya tenia el tercero", async () => {
 
   renderPage();
   await user.click(await screen.findByRole("button", { name: /editar/i }));
-  await screen.findByRole("heading", { name: /editar tercero/i });
+  await screen.findByRole("heading", { name: /editar cliente/i });
 
   expect(await screen.findByDisplayValue("555")).toBeInTheDocument();
   expect(screen.getAllByDisplayValue("Davivienda")).toHaveLength(1);
@@ -373,7 +374,7 @@ it("al editar muestra todos los datos, incluida la direccion", async () => {
 
   renderPage();
   await user.click(await screen.findByRole("button", { name: /editar/i }));
-  await screen.findByRole("heading", { name: /editar tercero/i });
+  await screen.findByRole("heading", { name: /editar cliente/i });
 
   expect(screen.getByDisplayValue("Calle 1 # 2-3")).toBeInTheDocument();
   expect(screen.getByDisplayValue("ana@example.com")).toBeInTheDocument();
@@ -462,7 +463,7 @@ it("al editar en el drawer tambien valida el formato antes de guardar", async ()
   await user.click(screen.getByRole("button", { name: /guardar/i }));
 
   expect(await screen.findByText("El teléfono solo puede tener números")).toBeInTheDocument();
-  expect(screen.getByRole("heading", { name: /editar tercero/i })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: /editar cliente/i })).toBeInTheDocument();
 });
 
 // 23 terceros: "Tercero 01" ... "Tercero 23". Con 10 por pagina son 3 paginas.
@@ -515,7 +516,7 @@ it("permite ver 50 por pagina y solo ofrece 10 y 50", async () => {
 
   renderPage();
   await screen.findByText("Tercero 01");
-  const selector = screen.getByRole("combobox", { name: /terceros por página/i });
+  const selector = screen.getByRole("combobox", { name: /clientes por página/i });
   const opciones = within(selector)
     .getAllByRole("option")
     .map((option) => option.textContent);
@@ -534,7 +535,7 @@ it("al cambiar a 50 por pagina vuelve a la primera pagina", async () => {
   await screen.findByText("Tercero 01");
   await user.click(screen.getByRole("button", { name: "Página 3" }));
   await user.selectOptions(
-    screen.getByRole("combobox", { name: /terceros por página/i }),
+    screen.getByRole("combobox", { name: /clientes por página/i }),
     "50",
   );
 
@@ -564,7 +565,7 @@ it("al eliminar el unico tercero de la ultima pagina muestra la pagina anterior"
 });
 
 // 60 terceros intercalados: cliente, proveedor, cliente, proveedor...
-// Sin filtro, la primera pagina de 10 trae solo 5 proveedores; con el filtro deben ser 10.
+// Si la pagina cortara antes de quedarse con su tipo, la primera pagina de 10 traeria solo 5.
 const INTERCALADOS = Array.from({ length: 60 }, (_, index) => {
   const numero = String(Math.floor(index / 2) + 1).padStart(2, "0");
   const esCliente = index % 2 === 0;
@@ -576,70 +577,75 @@ const INTERCALADOS = Array.from({ length: 60 }, (_, index) => {
   };
 });
 
-it("al filtrar por tipo pagina sobre los filtrados, no sobre la lista completa", async () => {
+it("la pantalla de Clientes muestra solo clientes y pagina sobre ellos", async () => {
   server.use(http.get(URL, () => HttpResponse.json(INTERCALADOS)));
-  const user = userEvent.setup();
 
-  renderPage();
-  await screen.findByText("Cliente 01");
-  await user.selectOptions(screen.getByLabelText(/filtrar por tipo/i), "proveedor");
+  renderPage("cliente");
 
-  expect(screen.getByText("Proveedor 01")).toBeInTheDocument();
-  expect(screen.getByText("Proveedor 10")).toBeInTheDocument();
-  expect(screen.queryByText("Proveedor 11")).not.toBeInTheDocument();
-  expect(screen.queryByText("Cliente 01")).not.toBeInTheDocument();
+  expect(await screen.findByText("Cliente 01")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Clientes" })).toBeInTheDocument();
+  expect(screen.getByText("Cliente 10")).toBeInTheDocument();
+  expect(screen.queryByText("Proveedor 01")).not.toBeInTheDocument();
   expect(screen.getByText("Mostrando 1–10 de 30")).toBeInTheDocument();
 });
 
-it("con 50 por pagina muestra todos los filtrados aunque en la lista completa esten mas atras", async () => {
+it("la pantalla de Proveedores muestra solo proveedores, aunque en la lista completa esten mas atras", async () => {
   server.use(http.get(URL, () => HttpResponse.json(INTERCALADOS)));
   const user = userEvent.setup();
 
-  renderPage();
-  await screen.findByText("Cliente 01");
-  await user.selectOptions(screen.getByRole("combobox", { name: /terceros por página/i }), "50");
-  await user.selectOptions(screen.getByLabelText(/filtrar por tipo/i), "proveedor");
+  renderPage("proveedor");
+  await screen.findByText("Proveedor 01");
+  expect(screen.getByRole("heading", { name: "Proveedores" })).toBeInTheDocument();
+  await user.selectOptions(screen.getByRole("combobox", { name: /proveedores por página/i }), "50");
 
-  // "Proveedor 30" es el tercero 60 de la lista: sin filtro quedaria en la segunda pagina.
+  // "Proveedor 30" es el tercero 60 de la lista completa.
   expect(screen.getByText("Proveedor 30")).toBeInTheDocument();
+  expect(screen.queryByText("Cliente 01")).not.toBeInTheDocument();
   expect(screen.getByText("Mostrando 1–30 de 30")).toBeInTheDocument();
 });
 
-it("al filtrar vuelve a la primera pagina", async () => {
+it("la pantalla de Clientes dice que no hay clientes aunque haya proveedores", async () => {
+  server.use(http.get(URL, () => HttpResponse.json([{ ...ANA, tipo: "proveedor" }])));
+
+  renderPage("cliente");
+
+  expect(await screen.findByText(/no tienes clientes registrados/i)).toBeInTheDocument();
+  expect(screen.queryByText("Ana Pérez")).not.toBeInTheDocument();
+});
+
+it("crear desde Proveedores no pregunta el tipo y envia proveedor", async () => {
+  let enviado: Record<string, unknown> = {};
+  server.use(
+    http.get(URL, () => HttpResponse.json([])),
+    http.post(URL, async ({ request }) => {
+      enviado = (await request.json()) as Record<string, unknown>;
+      return HttpResponse.json({ id: 1, activo: true, ...enviado }, { status: 201 });
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage("proveedor");
+  await user.click(await screen.findByRole("button", { name: /crear proveedor/i }));
+  await screen.findByRole("heading", { name: /crear proveedor/i });
+  expect(screen.queryByLabelText("Tipo")).not.toBeInTheDocument();
+  await user.type(screen.getByLabelText(/nombre/i), "Distribuidora");
+  await user.click(screen.getByRole("button", { name: /guardar/i }));
+
+  await vi.waitFor(() => expect(enviado).toMatchObject({ tipo: "proveedor", nombre: "Distribuidora" }));
+});
+
+it("al buscar vuelve a la primera pagina", async () => {
   server.use(http.get(URL, () => HttpResponse.json(INTERCALADOS)));
   const user = userEvent.setup();
 
   renderPage();
   await screen.findByText("Cliente 01");
   await user.click(screen.getByRole("button", { name: "Página 3" }));
-  await user.selectOptions(screen.getByLabelText(/filtrar por tipo/i), "cliente");
+  // "Cliente" coincide con los 30: cambia el filtro pero no el resultado.
+  await user.type(screen.getByLabelText(/buscar cliente/i), "Cliente");
 
   expect(screen.getByText("Cliente 01")).toBeInTheDocument();
   expect(screen.getByText("Mostrando 1–10 de 30")).toBeInTheDocument();
-});
-
-it("el filtro de clientes y el de proveedores incluyen a los terceros de tipo ambos", async () => {
-  const terceros = [
-    { ...ANA, id: 1, tipo: "cliente", nombre: "Solo Cliente" },
-    { ...ANA, id: 2, tipo: "proveedor", nombre: "Solo Proveedor" },
-    { ...ANA, id: 3, tipo: "ambos", nombre: "Los Dos" },
-  ];
-  server.use(http.get(URL, () => HttpResponse.json(terceros)));
-  const user = userEvent.setup();
-
-  renderPage();
-  await screen.findByText("Solo Cliente");
-  const tipo = screen.getByLabelText(/filtrar por tipo/i);
-
-  await user.selectOptions(tipo, "cliente");
-  expect(screen.getByText("Solo Cliente")).toBeInTheDocument();
-  expect(screen.getByText("Los Dos")).toBeInTheDocument();
-  expect(screen.queryByText("Solo Proveedor")).not.toBeInTheDocument();
-
-  await user.selectOptions(tipo, "proveedor");
-  expect(screen.getByText("Solo Proveedor")).toBeInTheDocument();
-  expect(screen.getByText("Los Dos")).toBeInTheDocument();
-  expect(screen.queryByText("Solo Cliente")).not.toBeInTheDocument();
 });
 
 it("busca por nombre sin importar mayusculas ni tildes", async () => {
@@ -652,21 +658,20 @@ it("busca por nombre sin importar mayusculas ni tildes", async () => {
 
   renderPage();
   await screen.findByText("Ana Pérez");
-  await user.type(screen.getByLabelText(/buscar tercero/i), "PEREZ");
+  await user.type(screen.getByLabelText(/buscar cliente/i), "PEREZ");
 
   expect(screen.getByText("Ana Pérez")).toBeInTheDocument();
   expect(screen.queryByText("Carlos Gómez")).not.toBeInTheDocument();
   expect(screen.getByText("Mostrando 1–1 de 1")).toBeInTheDocument();
 });
 
-it("combina el filtro de nombre con el de tipo", async () => {
+it("en Proveedores la busqueda solo encuentra proveedores", async () => {
   server.use(http.get(URL, () => HttpResponse.json(INTERCALADOS)));
   const user = userEvent.setup();
 
-  renderPage();
-  await screen.findByText("Cliente 01");
-  await user.selectOptions(screen.getByLabelText(/filtrar por tipo/i), "proveedor");
-  await user.type(screen.getByLabelText(/buscar tercero/i), "2");
+  renderPage("proveedor");
+  await screen.findByText("Proveedor 01");
+  await user.type(screen.getByLabelText(/buscar proveedor/i), "2");
 
   // Proveedores con "2" en el nombre: 02, 12, 20 a 29 → 12 en total.
   expect(screen.getByText("Proveedor 02")).toBeInTheDocument();
@@ -680,9 +685,9 @@ it("avisa cuando ningun tercero coincide con el filtro", async () => {
 
   renderPage();
   await screen.findByText("Ana Pérez");
-  await user.type(screen.getByLabelText(/buscar tercero/i), "zzz");
+  await user.type(screen.getByLabelText(/buscar cliente/i), "zzz");
 
-  expect(screen.getByText(/ningún tercero coincide con el filtro/i)).toBeInTheDocument();
+  expect(screen.getByText(/ningún cliente coincide con la búsqueda/i)).toBeInTheDocument();
   // El buscador sigue a la vista para poder corregir lo que se escribio.
-  expect(screen.getByLabelText(/buscar tercero/i)).toHaveValue("zzz");
+  expect(screen.getByLabelText(/buscar cliente/i)).toHaveValue("zzz");
 });

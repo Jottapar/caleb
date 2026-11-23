@@ -17,7 +17,10 @@ const nav = (
       <RouterLink to="/">Inicio</RouterLink>
     </Link>
     <Link asChild color="white" fontWeight="medium" px="2" py="1" borderRadius="md" bg="whiteAlpha.100">
-      <RouterLink to="/terceros">Clientes y proveedores</RouterLink>
+      <RouterLink to="/clientes">Clientes</RouterLink>
+    </Link>
+    <Link asChild color="white" fontWeight="medium" px="2" py="1" borderRadius="md" bg="whiteAlpha.100">
+      <RouterLink to="/proveedores">Proveedores</RouterLink>
     </Link>
     <Link asChild color="white" fontWeight="medium" px="2" py="1" borderRadius="md" bg="whiteAlpha.100">
       <RouterLink to="/productos">Productos</RouterLink>
@@ -43,7 +46,9 @@ export const router = createBrowserRouter([
     errorElement: <ErrorPage />,
     children: [
       { index: true, element: <HomePage /> },
-      { path: "terceros", element: <ThirdPartiesPage /> },
+      // La misma pagina dos veces; el tipo decide que muestra y que crea.
+      { path: "clientes", element: <ThirdPartiesPage tipo="cliente" /> },
+      { path: "proveedores", element: <ThirdPartiesPage tipo="proveedor" /> },
       { path: "productos", element: <ItemsPage /> },
       { path: "recibos", element: <ReceiptsPage /> },
       { path: "cuentas-por-cobrar", element: <AccountsReceivablePage /> },

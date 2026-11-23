@@ -35,19 +35,13 @@ function validate(email: string, telefono: string, numeroCuenta: string, conCuen
   return errors;
 }
 
-const ETIQUETAS_TIPO: Record<ThirdPartyType, string> = {
-  cliente: "Cliente",
-  proveedor: "Proveedor",
-  ambos: "Ambos",
-};
-
 type Props = {
   banks: Bank[];
   banksError: boolean;
   initialValues?: ThirdParty;
-  // Los tipos que se ofrecen en el desplegable (por defecto los tres). Desde un recibo solo
-  // tienen sentido cliente y ambos.
-  tipos?: ThirdPartyType[];
+  // El tipo no se pregunta: lo pone quien abre el formulario (la pantalla de Clientes o la de
+  // Proveedores, o el recibo, que siempre crea un cliente). Un tercero no cambia de tipo.
+  tipo: ThirdPartyType;
   onSubmit: (data: ThirdPartyCreate) => void;
   onCancel?: () => void;
   isSubmitting: boolean;
@@ -58,14 +52,13 @@ export function ThirdPartyForm({
   banks,
   banksError,
   initialValues,
-  tipos = ["cliente", "proveedor", "ambos"],
+  tipo,
   onSubmit,
   onCancel,
   isSubmitting,
   errorMessage,
 }: Props) {
   const cuentaInicial = initialValues?.cuenta_bancaria;
-  const [tipo, setTipo] = useState<ThirdPartyType>(initialValues?.tipo ?? tipos[0]);
   const [nombre, setNombre] = useState(initialValues?.nombre ?? "");
   const [documento, setDocumento] = useState(initialValues?.documento ?? "");
   const [email, setEmail] = useState(initialValues?.email ?? "");
@@ -101,22 +94,6 @@ export function ThirdPartyForm({
 
   return (
     <Stack as="form" onSubmit={handleSubmit} gap="4">
-      <Field.Root required>
-        <Field.Label>Tipo</Field.Label>
-        <NativeSelect.Root>
-          <NativeSelect.Field
-            value={tipo}
-            onChange={(event) => setTipo(event.target.value as ThirdPartyType)}
-          >
-            {tipos.map((opcion) => (
-              <option key={opcion} value={opcion}>
-                {ETIQUETAS_TIPO[opcion]}
-              </option>
-            ))}
-          </NativeSelect.Field>
-        </NativeSelect.Root>
-      </Field.Root>
-
       <Field.Root>
         <Field.Label>Nombre</Field.Label>
         <Input value={nombre} onChange={(event) => setNombre(event.target.value)} />

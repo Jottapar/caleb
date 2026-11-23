@@ -284,12 +284,12 @@ export function CreateReceiptDialog({
         </Dialog.Positioner>
       </Dialog.Root>
 
-      {/* Hermano y no hijo del diálogo del recibo. Desde un recibo solo se crea un cliente o un
-          "ambos": un proveedor no podría elegirse aquí. El cliente creado queda elegido. */}
+      {/* Hermano y no hijo del diálogo del recibo. Desde un recibo siempre se crea un cliente:
+          un proveedor no podría elegirse aquí. El cliente creado queda elegido. */}
       {creatingClient && (
         <CreateThirdPartyDialog
           title="Crear cliente"
-          tipos={["cliente", "ambos"]}
+          tipo="cliente"
           onCreated={(tercero) => onTerceroChange(tercero.id.toString())}
           onClose={() => setCreatingClient(false)}
         />

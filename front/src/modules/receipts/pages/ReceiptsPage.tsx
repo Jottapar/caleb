@@ -93,10 +93,10 @@ export function ReceiptsPage() {
     null,
   );
 
-  // Solo clientes (o "ambos") pueden ir en un recibo. Se vende lo que está activo: productos
+  // Solo clientes pueden ir en un recibo. Se vende lo que está activo: productos
   // marcados para venderse y fichas técnicas.
   const clientes = (thirdParties.data ?? []).filter(
-    (tercero) => tercero.tipo === "cliente" || tercero.tipo === "ambos",
+    (tercero) => tercero.tipo === "cliente",
   );
   const vendibles = (items.data ?? []).filter(
     (item) => item.se_vende && item.activo,

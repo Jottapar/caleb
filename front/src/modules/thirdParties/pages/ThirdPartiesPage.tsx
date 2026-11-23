@@ -5,14 +5,50 @@ import { useState } from "react";
 import { TablePagination } from "../../../shared/components/ui/TablePagination";
 import { normalizeText } from "../../../shared/lib/normalizeText";
 import { CreateThirdPartyDialog } from "../components/CreateThirdPartyDialog";
-import { ThirdPartyFilters, type TypeFilter } from "../components/ThirdPartyFilters";
+import { ThirdPartyFilters } from "../components/ThirdPartyFilters";
 import { ThirdPartyForm } from "../components/ThirdPartyForm";
 import { ThirdPartyTable } from "../components/ThirdPartyTable";
 import { useBanks } from "../hooks/useBanks";
 import { useDeleteThirdParty } from "../hooks/useDeleteThirdParty";
 import { useThirdParties } from "../hooks/useThirdParties";
 import { useUpdateThirdParty } from "../hooks/useUpdateThirdParty";
-import type { ThirdParty, ThirdPartyCreate } from "../types";
+import type { ThirdParty, ThirdPartyCreate, ThirdPartyType } from "../types";
+
+// Los textos de cada pantalla. Clientes y Proveedores son la misma página: solo cambian esto y
+// el tipo que se muestra y se crea.
+type Textos = {
+  titulo: string;
+  crear: string;
+  editar: string;
+  buscar: string;
+  porPagina: string;
+  errorCarga: string;
+  vacio: string;
+  sinCoincidencias: string;
+};
+
+const TEXTOS: Record<ThirdPartyType, Textos> = {
+  cliente: {
+    titulo: "Clientes",
+    crear: "Crear cliente",
+    editar: "Editar cliente",
+    buscar: "Buscar cliente",
+    porPagina: "Clientes por página",
+    errorCarga: "No pudimos cargar tus clientes. Intenta de nuevo.",
+    vacio: "No tienes clientes registrados todavía.",
+    sinCoincidencias: "Ningún cliente coincide con la búsqueda.",
+  },
+  proveedor: {
+    titulo: "Proveedores",
+    crear: "Crear proveedor",
+    editar: "Editar proveedor",
+    buscar: "Buscar proveedor",
+    porPagina: "Proveedores por página",
+    errorCarga: "No pudimos cargar tus proveedores. Intenta de nuevo.",
+    vacio: "No tienes proveedores registrados todavía.",
+    sinCoincidencias: "Ningún proveedor coincide con la búsqueda.",
+  },
+};
 
 const ERROR_GENERICO_GUARDAR = "No se pudo guardar el tercero. Intenta de nuevo.";
 const ERROR_GENERICO_ELIMINAR = "No se pudo eliminar el tercero. Intenta de nuevo.";
@@ -26,18 +62,18 @@ function getErrorMessage(isError: boolean, error: unknown, errorGenerico = ERROR
     : errorGenerico;
 }
 
-function filterThirdParties(thirdParties: ThirdParty[], name: string, type: TypeFilter) {
+function filterByName(thirdParties: ThirdParty[], name: string) {
   const search = normalizeText(name);
-  return thirdParties.filter((thirdParty) => {
-    // Un tercero "ambos" es cliente y proveedor a la vez: sale en los dos filtros.
-    const matchesType =
-      type === "todos" || thirdParty.tipo === type || thirdParty.tipo === "ambos";
-    const matchesName = normalizeText(thirdParty.nombre).includes(search);
-    return matchesType && matchesName;
-  });
+  return thirdParties.filter((thirdParty) => normalizeText(thirdParty.nombre).includes(search));
 }
 
-export function ThirdPartiesPage() {
+type Props = {
+  // La pantalla de Clientes o la de Proveedores: muestra, crea y edita solo este tipo.
+  tipo: ThirdPartyType;
+};
+
+export function ThirdPartiesPage({ tipo }: Props) {
+  const textos = TEXTOS[tipo];
   const thirdParties = useThirdParties();
   const banks = useBanks();
   const updateThirdParty = useUpdateThirdParty();
@@ -48,12 +84,12 @@ export function ThirdPartiesPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [nameFilter, setNameFilter] = useState("");
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>("todos");
 
-  // La API devuelve todos los terceros (los desplegables de Recibos los necesitan
-  // completos). Primero se filtra y despues se pagina: la pagina se corta del
-  // resultado filtrado, no de la lista completa.
-  const filtered = filterThirdParties(thirdParties.data ?? [], nameFilter, typeFilter);
+  // La API devuelve todos los terceros de la empresa, clientes y proveedores juntos. Aqui se
+  // quedan solo los del tipo de esta pantalla; despues se busca por nombre y al final se
+  // pagina: la pagina se corta del resultado filtrado, no de la lista completa.
+  const ofType = (thirdParties.data ?? []).filter((thirdParty) => thirdParty.tipo === tipo);
+  const filtered = filterByName(ofType, nameFilter);
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   // Si al eliminar se vacia la ultima pagina, se muestra la anterior en vez de una vacia.
@@ -69,11 +105,6 @@ export function ThirdPartiesPage() {
   // Con otro filtro los resultados son otros: se empieza desde la primera pagina.
   function handleNameFilterChange(name: string) {
     setNameFilter(name);
-    setPage(1);
-  }
-
-  function handleTypeFilterChange(type: TypeFilter) {
-    setTypeFilter(type);
     setPage(1);
   }
 
@@ -107,9 +138,9 @@ export function ThirdPartiesPage() {
   return (
     <Stack gap="6">
       <HStack justify="space-between">
-        <Heading size="xl">Clientes y proveedores</Heading>
+        <Heading size="xl">{textos.titulo}</Heading>
         <Button colorPalette="brand" onClick={handleOpenCreate}>
-          Crear cliente o proveedor
+          {textos.crear}
         </Button>
       </HStack>
 
@@ -119,24 +150,22 @@ export function ThirdPartiesPage() {
         </Center>
       )}
 
-      {thirdParties.isError && (
-        <Text color="fg.error">No pudimos cargar tus terceros. Intenta de nuevo.</Text>
+      {thirdParties.isError && <Text color="fg.error">{textos.errorCarga}</Text>}
+
+      {/* "Vacío" es vacío de este tipo: puede haber proveedores y ningún cliente todavía. */}
+      {thirdParties.data && ofType.length === 0 && (
+        <Text color="fg.muted">{textos.vacio}</Text>
       )}
 
-      {thirdParties.data && thirdParties.data.length === 0 && (
-        <Text color="fg.muted">No tienes terceros registrados todavía.</Text>
-      )}
-
-      {thirdParties.data && thirdParties.data.length > 0 && (
+      {thirdParties.data && ofType.length > 0 && (
         <>
           <ThirdPartyFilters
+            label={textos.buscar}
             name={nameFilter}
-            type={typeFilter}
             onNameChange={handleNameFilterChange}
-            onTypeChange={handleTypeFilterChange}
           />
           {total === 0 ? (
-            <Text color="fg.muted">Ningún tercero coincide con el filtro.</Text>
+            <Text color="fg.muted">{textos.sinCoincidencias}</Text>
           ) : (
             <>
               <ThirdPartyTable
@@ -146,7 +175,7 @@ export function ThirdPartiesPage() {
                 onDelete={setDeletingThirdParty}
               />
               <TablePagination
-                itemsPerPageLabel="Terceros por página"
+                itemsPerPageLabel={textos.porPagina}
                 count={total}
                 page={currentPage}
                 pageSize={pageSize}
@@ -160,7 +189,8 @@ export function ThirdPartiesPage() {
 
       {creating && (
         <CreateThirdPartyDialog
-          title="Crear cliente o proveedor"
+          title={textos.crear}
+          tipo={tipo}
           onClose={() => setCreating(false)}
         />
       )}
@@ -175,11 +205,12 @@ export function ThirdPartiesPage() {
           <Drawer.Positioner>
             <Drawer.Content>
               <Drawer.Header>
-                <Drawer.Title>Editar tercero</Drawer.Title>
+                <Drawer.Title>{textos.editar}</Drawer.Title>
               </Drawer.Header>
               <Drawer.Body>
                 <ThirdPartyForm
                   key={editingThirdParty.id}
+                  tipo={tipo}
                   banks={banks.data ?? []}
                   banksError={banks.isError}
                   initialValues={editingThirdParty}

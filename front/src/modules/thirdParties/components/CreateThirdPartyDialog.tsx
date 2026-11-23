@@ -10,18 +10,18 @@ const ERROR_GENERICO = "No se pudo guardar el tercero. Intenta de nuevo.";
 
 type Props = {
   title: string;
-  // Los tipos que se pueden elegir en el formulario. Sin esto, los tres.
-  tipos?: ThirdPartyType[];
+  // El tipo con el que se crea: lo decide quien abre la ventana, no el usuario.
+  tipo: ThirdPartyType;
   // Recibe el tercero recién creado (ya con su id), para quien necesite elegirlo.
   onCreated?: (thirdParty: ThirdParty) => void;
   onClose: () => void;
 };
 
-// La ventana de crear un cliente o proveedor. La usan la pantalla de Clientes y proveedores
+// La ventana de crear un cliente o proveedor. La usan las pantallas de Clientes, de Proveedores
 // y la de Recibos, así el formulario y sus reglas viven en un solo lugar.
 export function CreateThirdPartyDialog({
   title,
-  tipos,
+  tipo,
   onCreated,
   onClose,
 }: Props) {
@@ -49,7 +49,7 @@ export function CreateThirdPartyDialog({
             <ThirdPartyForm
               banks={banks.data ?? []}
               banksError={banks.isError}
-              tipos={tipos}
+              tipo={tipo}
               onSubmit={(data) =>
                 createThirdParty.mutate(data, {
                   onSuccess: (thirdParty) => {

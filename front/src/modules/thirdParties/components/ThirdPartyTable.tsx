@@ -14,7 +14,6 @@ export function ThirdPartyTable({ thirdParties, onEdit, onToggleActive, onDelete
     <Table.Root>
       <Table.Header>
         <Table.Row>
-          <Table.ColumnHeader>Tipo</Table.ColumnHeader>
           <Table.ColumnHeader>Nombre</Table.ColumnHeader>
           <Table.ColumnHeader>Documento</Table.ColumnHeader>
           <Table.ColumnHeader>Correo</Table.ColumnHeader>
@@ -26,7 +25,6 @@ export function ThirdPartyTable({ thirdParties, onEdit, onToggleActive, onDelete
       <Table.Body>
         {thirdParties.map((thirdParty) => (
           <Table.Row key={thirdParty.id}>
-            <Table.Cell>{thirdParty.tipo}</Table.Cell>
             <Table.Cell>{thirdParty.nombre}</Table.Cell>
             <Table.Cell>{thirdParty.documento}</Table.Cell>
             <Table.Cell>{thirdParty.email}</Table.Cell>

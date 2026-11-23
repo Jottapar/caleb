@@ -326,11 +326,8 @@ it("crea un cliente desde el recibo con el mismo formulario y queda elegido", as
     name: "Crear cliente",
   });
 
-  // Solo cliente o ambos: un proveedor no iría en un recibo
-  const tipos = within(within(clienteDialog).getByLabelText("Tipo"))
-    .getAllByRole("option")
-    .map((option) => option.textContent);
-  expect(tipos).toEqual(["Cliente", "Ambos"]);
+  // El tipo no se pregunta: desde un recibo siempre se crea un cliente
+  expect(within(clienteDialog).queryByLabelText("Tipo")).not.toBeInTheDocument();
 
   await user.type(
     within(clienteDialog).getByLabelText("Nombre"),
