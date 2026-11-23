@@ -65,8 +65,8 @@ quién la escribió.
 
 ### Commits
 
-El mensaje lo escribe Johan. Si se le sugiere uno, el `Closes #N` va como trailer en la última
-línea, después de una línea en blanco. Él usa lazygit: en el panel de commit, Enter hace salto de
+El mensaje lo escribe Johan. Si se le sugiere uno, va sin `Closes #N`: las historias se cierran a
+mano (ver la sección 7). Él usa lazygit: en el panel de commit, Enter hace salto de
 línea y `Ctrl+S` confirma.
 
 ---
@@ -109,18 +109,26 @@ Cada una tiene su motivo escrito en `06. Decisiones.md`; aquí va el resumen eje
 - **Sin enums y sin índices por ahora.** Los valores válidos van en un comentario de la columna y
   **los valida el backend**: roles, tipos, estados, condiciones, orígenes, y la unicidad de códigos
   y números por empresa.
-- **Las líneas guardan copia** del nombre, precio e impuesto al momento de vender o comprar. Si
-  después cambia el precio del ítem, los documentos viejos no cambian.
+- **Las líneas guardan copia** del nombre, precio, costo e impuesto al momento de vender o comprar.
+  Si después cambia el precio o el costo del ítem o la ficha, los documentos viejos no cambian.
+- **Borrado lógico.** Eliminar marca `deleted_at`; nunca se borra físicamente. El filtro de
+  eliminados va **una sola vez, global** en el backend, no a mano en cada consulta. Listar y buscar
+  los ocultan; el historial (recibos, compras, reportes) los sigue mostrando. Desactivar (`activo`)
+  es otra cosa y se mantiene.
 - `empresa_id` en casi todas las tablas. Toda consulta filtra por la empresa del usuario.
 
 ### Alcance
 
-- **Multiempresa, pero un usuario = una empresa** en el MVP. No hay pantalla para elegir empresa.
-- **Los roles quedan para la V2.** La columna `rol` existe y se valida, pero **no hay permisos
-  diferenciados**: no implementes `require_role` ni pantallas de gestión de usuarios.
-- **No hay registro público.** La empresa y su usuario propietario se crean con un comando de
-  consola. Tampoco hay "olvidé mi contraseña" en el MVP.
-- **Sin DIAN.** El recibo de venta es un comprobante interno. La facturación electrónica es V2.
+- **Multiempresa: un usuario = una empresa, una empresa = varios usuarios.** El correo es único en
+  todo el sistema (sin distinguir mayúsculas) y decide a qué empresa se entra. No hay pantalla para
+  elegir empresa.
+- **Roles Admin, Usuario y Contador.** El rol se guarda y se valida, pero **todos pueden hacer lo
+  mismo** hasta la historia de permisos por rol: no implementes `require_role` antes de ella. El
+  Admin gestiona los usuarios de su empresa y edita los datos de la empresa.
+- **No hay registro público.** La empresa y su primer Admin se crean con un comando de consola.
+  Tampoco hay "olvidé mi contraseña" en el MVP.
+- **Sin DIAN.** El recibo de venta es un comprobante interno. La facturación electrónica es V2. Un
+  recibo no se edita ni se borra: si tiene un error, se cancela (anula).
 - **Solo Colombia, solo COP.** Impuestos simples.
 
 ### Nombres
@@ -173,9 +181,17 @@ técnica (`models/`, `services/`, `schemas/` globales).
 
 Las historias viven en GitHub: https://github.com/users/Jottapar/projects/4
 
-**Los números de las historias no son los números de issue de GitHub.** La historia `0a` es el issue
-#1, la `1` es el #6, la `14` es el #21. En las notas de Obsidian se usan los números de las historias
-(`0c`, `1b`); en commits y PRs, los de GitHub (`closes #3`).
+**Organizado por módulo.** Cada módulo es un issue padre (`Módulo · Usuarios de la empresa`, etiqueta
+`modulo`) y sus historias son sub-issues: crear, listar, editar, eliminar, etc. **El orden de trabajo
+es el del tablero**, de arriba hacia abajo, saltando lo cerrado.
+
+**Los números de las historias no son los números de issue de GitHub, y a veces chocan.** La
+historia `0a` es el issue #1, la `1` es el #6, la `16` (crear usuario) es el #34, mientras que el
+issue #16 es la historia `9`. En las notas de Obsidian y en la conversación se usan los números de
+las historias (`0c`, `16b`); en GitHub, los de los issues.
+
+**Las historias se cierran a mano** en el tablero, no con `Closes #N` en el commit. Ese trailer
+cerraría el issue apenas el commit llega a `development`, antes de pasar por QA y producción.
 
 ---
 
