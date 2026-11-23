@@ -21,7 +21,7 @@ from app.modules.taxes.models import Tax
 from app.modules.technical_sheets.models import TechnicalSheet, TechnicalSheetItemLine
 from app.modules.third_parties.models import ThirdParty
 
-TERCEROS_VALIDOS_EN_RECIBO = {"cliente", "ambos"}
+TERCEROS_VALIDOS_EN_RECIBO = {"cliente"}
 CONDICIONES_VALIDAS = {"contado", "credito"}
 
 
@@ -36,7 +36,7 @@ def _validate_third_party(session: Session, tercero_id: int, empresa_id: int) ->
     if not tercero:
         raise NotFoundError("Tercero", tercero_id)
     if tercero.tipo not in TERCEROS_VALIDOS_EN_RECIBO:
-        raise BusinessError("El tercero del recibo debe ser cliente o ambos")
+        raise BusinessError("El tercero del recibo debe ser un cliente")
 
 
 def _generate_numero(session: Session, empresa_id: int) -> str:

@@ -13,7 +13,7 @@ class ThirdParty(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     empresa_id: int = Field(foreign_key="empresas.id")
-    # Valores validos (los valida el backend): cliente, proveedor, ambos
+    # Valores validos (los valida el backend): cliente, proveedor. No cambia despues de crearse.
     tipo: str = Field(max_length=20)
     nombre: str = Field(max_length=150)
     documento: str = Field(max_length=30, default="")

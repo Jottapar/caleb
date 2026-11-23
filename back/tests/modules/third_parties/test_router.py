@@ -77,6 +77,25 @@ def test_create_third_party_returns_201_and_saved_data(logged_in_client):
     assert body["cuenta_bancaria"] is None
 
 
+def test_create_third_party_rejects_type_ambos(logged_in_client):
+    # "ambos" ya no existe: quien es cliente y proveedor se registra dos veces.
+    response = logged_in_client.post(
+        URL, json=_payload(tipo="ambos"), headers=_csrf_headers(logged_in_client)
+    )
+
+    assert response.status_code == 422
+    assert response.json()["message"] == "Tipo de tercero invalido: ambos"
+
+
+def test_same_person_can_be_registered_as_client_and_supplier(logged_in_client):
+    cliente = _create(logged_in_client, tipo="cliente", documento="900123")
+    proveedor = _create(logged_in_client, tipo="proveedor", documento="900123")
+
+    assert cliente["id"] != proveedor["id"]
+    tipos = sorted(tercero["tipo"] for tercero in logged_in_client.get(URL).json())
+    assert tipos == ["cliente", "proveedor"]
+
+
 def test_create_third_party_appears_in_list(logged_in_client):
     _create(logged_in_client, tipo="proveedor", nombre="Insumos SAS")
 
@@ -294,15 +313,41 @@ def test_update_third_party_returns_200_and_updated_data(logged_in_client):
 
     response = logged_in_client.patch(
         f"{URL}/{created['id']}",
-        json={"tipo": "proveedor", "nombre": "Carlos Actualizado", "direccion": "Carrera 9"},
+        json={"nombre": "Carlos Actualizado", "direccion": "Carrera 9"},
         headers=_csrf_headers(logged_in_client),
     )
 
     assert response.status_code == 200
     body = response.json()
-    assert body["tipo"] == "proveedor"
     assert body["nombre"] == "Carlos Actualizado"
     assert body["direccion"] == "Carrera 9"
+
+
+def test_update_third_party_accepts_same_type(logged_in_client):
+    # El formulario de editar manda todos los campos, tipo incluido: el mismo tipo no es un cambio.
+    created = _create(logged_in_client, tipo="proveedor")
+
+    response = logged_in_client.patch(
+        f"{URL}/{created['id']}",
+        json={"tipo": "proveedor", "nombre": "Carlos Actualizado"},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["tipo"] == "proveedor"
+
+
+def test_update_third_party_rejects_type_change(logged_in_client):
+    created = _create(logged_in_client, tipo="cliente")
+
+    response = logged_in_client.patch(
+        f"{URL}/{created['id']}", json={"tipo": "proveedor"}, headers=_csrf_headers(logged_in_client)
+    )
+
+    assert response.status_code == 422
+    assert response.json()["message"] == "El tipo de un tercero no se puede cambiar"
+    listed = logged_in_client.get(URL).json()
+    assert listed[0]["tipo"] == "cliente"
 
 
 def test_update_third_party_only_changes_sent_fields(logged_in_client):

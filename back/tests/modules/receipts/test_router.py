@@ -222,7 +222,7 @@ def test_create_receipt_rejects_third_party_of_type_proveedor(logged_in_client, 
     )
 
     assert response.status_code == 422
-    assert response.json()["error"] == "business_error"
+    assert response.json()["message"] == "El tercero del recibo debe ser un cliente"
 
 
 def test_create_receipt_rejects_item_from_other_company(logged_in_client, session):

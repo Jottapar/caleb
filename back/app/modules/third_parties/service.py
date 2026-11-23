@@ -7,7 +7,8 @@ from app.modules.banks import service as banks_service
 from app.modules.third_parties.models import ThirdParty, ThirdPartyBankAccount
 from app.modules.third_parties.schemas import BankAccountData, ThirdPartyCreate, ThirdPartyUpdate
 
-TIPOS_VALIDOS = {"cliente", "proveedor", "ambos"}
+# Sin "ambos": quien es cliente y proveedor se registra dos veces, una con cada tipo.
+TIPOS_VALIDOS = {"cliente", "proveedor"}
 TIPOS_CUENTA_VALIDOS = {"ahorros", "corriente"}
 MAX_DIGITOS_CUENTA = 20
 
@@ -18,7 +19,7 @@ FORMATO_CORREO = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 SOLO_DIGITOS = re.compile(r"[0-9]+")
 
 # Columna -> como se le nombra al usuario en el mensaje de error.
-# Obligatorios para todo tercero, sea cliente, proveedor o ambos.
+# Obligatorios para todo tercero, sea cliente o proveedor.
 CAMPOS_OBLIGATORIOS = {
     "nombre": "nombre",
     "documento": "documento",
@@ -109,6 +110,10 @@ def update_third_party(
     session: Session, third_party_id: int, data: ThirdPartyUpdate, empresa_id: int
 ) -> ThirdParty:
     third_party = get_by_id(session, third_party_id, empresa_id)
+    # Un tercero no cambia de tipo: cada pantalla (Clientes o Proveedores) maneja solo el suyo.
+    # Se acepta que llegue el mismo tipo, porque el formulario de editar lo manda completo.
+    if data.tipo is not None and data.tipo.strip() != third_party.tipo:
+        raise BusinessError("El tipo de un tercero no se puede cambiar")
     cambios = data.model_dump(exclude_unset=True)
     # `cuenta_bancaria` se maneja aparte: model_dump la convierte en dict, y aqui
     # importa distinguir "no vino" (no esta en cambios) de "vino null" (borrarla).
