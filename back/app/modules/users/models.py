@@ -31,5 +31,5 @@ class UserCompany(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     usuario_id: int = Field(foreign_key="usuarios.id")
     empresa_id: int = Field(foreign_key="empresas.id")
-    # Valores validos (los valida el backend, sin enum): propietario, administrador, contador, vendedor
-    rol: str = Field(max_length=20, default="vendedor")
+    # Valores validos (los valida el backend, sin enum): admin, usuario, contador
+    rol: str = Field(max_length=20, default="usuario")

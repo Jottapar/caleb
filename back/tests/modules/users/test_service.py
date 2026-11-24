@@ -26,7 +26,7 @@ def test_create_company_creates_company_and_owner_user(session):
         )
     ).one()
 
-    assert link.rol == "propietario"
+    assert link.rol == "admin"
 
 
 def test_create_company_hashes_password(session):

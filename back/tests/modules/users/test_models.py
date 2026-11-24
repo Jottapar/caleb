@@ -12,7 +12,7 @@ def test_create_company_and_user_with_role_persists(session):
     session.add(user)
     session.commit()
 
-    link = UserCompany(usuario_id=user.id, empresa_id=company.id, rol="propietario")
+    link = UserCompany(usuario_id=user.id, empresa_id=company.id, rol="admin")
     session.add(link)
     session.commit()
 
@@ -24,7 +24,7 @@ def test_create_company_and_user_with_role_persists(session):
     assert user.email == "johan@example.com"
     assert link.usuario_id == user.id
     assert link.empresa_id == company.id
-    assert link.rol == "propietario"
+    assert link.rol == "admin"
 
 
 def test_user_email_unique_duplicate_raises_integrity_error(session):
@@ -34,3 +34,8 @@ def test_user_email_unique_duplicate_raises_integrity_error(session):
     session.add(User(nombre="Otro", email="duplicado@example.com", password_hash="hash-2"))
     with pytest.raises(IntegrityError):
         session.commit()
+
+
+def test_user_company_role_defaults_to_usuario():
+    # El rol por defecto es el de menos responsabilidad: quien no lo pide, no queda de admin.
+    assert UserCompany(usuario_id=1, empresa_id=1).rol == "usuario"
