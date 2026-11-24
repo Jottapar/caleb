@@ -10,6 +10,9 @@ server {
     server_name SUBDOMINIO_QA;
 
     location /api/ {
+        # Por defecto Nginx rechaza cuerpos de mas de 1 MB. El logo puede pesar hasta 5 MB y el
+        # cuerpo trae ademas los encabezados del formulario, de ahi los 6 MB. Solo en /api/.
+        client_max_body_size 6m;
         proxy_pass http://127.0.0.1:8001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
