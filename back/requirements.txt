@@ -15,6 +15,11 @@ loguru
 authx
 pwdlib[argon2]
 
+# Archivos (logo de la empresa)
+boto3
+pillow
+python-multipart
+
 # Tests
 pytest
 httpx2

@@ -18,6 +18,8 @@ class Company(SQLModel, table=True):
     direccion: str = Field(max_length=200, default="")
     telefono: str = Field(max_length=30, default="")
     email: str = Field(max_length=150, default="")
+    # Ruta del logo dentro del bucket de R2 del entorno ('' si no tiene). La imagen no se guarda aqui.
+    logo_ruta: str = Field(max_length=200, default="")
     pais: str = Field(max_length=2, default="CO")
     moneda: str = Field(max_length=3, default="COP")
     activa: bool = Field(default=True)

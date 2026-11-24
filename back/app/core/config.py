@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     # Firma los JWT de las cookies de sesion. Distinta por entorno: nunca la
     # de desarrollo en produccion. Sin default: si falta, la app no arranca.
     JWT_SECRET_KEY: str
+    # Cloudflare R2, donde se guardan los archivos (logo de la empresa). Un bucket y un token por
+    # entorno. Sin default: si faltan, la app no arranca (mejor eso que fallar al subir un logo).
+    R2_ENDPOINT_URL: str
+    R2_ACCESS_KEY_ID: str
+    R2_SECRET_ACCESS_KEY: str
+    R2_BUCKET: str
 
     @property
     def alembic_url(self) -> str:

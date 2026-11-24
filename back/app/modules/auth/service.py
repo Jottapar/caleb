@@ -25,11 +25,10 @@ def get_active_user(session: Session, user_id: int) -> User:
     return user
 
 
-def get_company_name(session: Session, user_id: int) -> str:
-    """El MVP es un usuario = una empresa, por eso basta con la primera fila."""
-    company = session.exec(
+def get_company(session: Session, user_id: int) -> Company | None:
+    """La empresa del usuario. El MVP es un usuario = una empresa, por eso basta con la primera fila."""
+    return session.exec(
         select(Company)
         .join(UserCompany, UserCompany.empresa_id == Company.id)
         .where(UserCompany.usuario_id == user_id)
     ).first()
-    return company.nombre if company else ""

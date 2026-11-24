@@ -60,7 +60,11 @@ def test_me_after_login_returns_user_name_and_company_name(logged_in_client):
     response = logged_in_client.get("/api/v1/auth/me")
 
     assert response.status_code == 200
-    assert response.json() == {"user_name": "Johan", "company_name": "Panadería Luna"}
+    assert response.json() == {
+        "user_name": "Johan",
+        "company_name": "Panadería Luna",
+        "logo_version": "",
+    }
 
 
 def test_logout_then_me_returns_401(logged_in_client):
