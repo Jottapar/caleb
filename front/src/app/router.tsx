@@ -1,4 +1,5 @@
-import { Link } from "@chakra-ui/react";
+import { Button, Link, Menu, Portal } from "@chakra-ui/react";
+import { LuChevronDown } from "react-icons/lu";
 import { createBrowserRouter, Link as RouterLink } from "react-router-dom";
 
 import { CompanyName, LoginPage, LogoutButton, RequireAuth } from "../modules/auth";
@@ -7,6 +8,7 @@ import { HomePage } from "../modules/home";
 import { ItemsPage } from "../modules/items";
 import { AccountsReceivablePage, ReceiptsPage } from "../modules/receipts";
 import { ThirdPartiesPage } from "../modules/thirdParties";
+import { UsersPage } from "../modules/users";
 import { ErrorPage } from "../shared/components/ErrorPage";
 import { Layout } from "../shared/components/Layout";
 
@@ -32,9 +34,37 @@ const nav = (
     <Link asChild color="white" fontWeight="medium" px="2" py="1" borderRadius="md" bg="whiteAlpha.100">
       <RouterLink to="/cuentas-por-cobrar">Cuentas por cobrar</RouterLink>
     </Link>
-    <Link asChild color="white" fontWeight="medium" px="2" py="1" borderRadius="md" bg="whiteAlpha.100">
-      <RouterLink to="/empresa">Empresa</RouterLink>
-    </Link>
+    {/* Empresa es un submenú: sus datos y sus usuarios son dos páginas distintas. */}
+    <Menu.Root>
+      <Menu.Trigger asChild>
+        <Button
+          variant="plain"
+          h="auto"
+          color="white"
+          fontWeight="medium"
+          px="2"
+          py="1"
+          borderRadius="md"
+          bg="whiteAlpha.100"
+          _hover={{ bg: "whiteAlpha.200" }}
+        >
+          Empresa
+          <LuChevronDown />
+        </Button>
+      </Menu.Trigger>
+      <Portal>
+        <Menu.Positioner>
+          <Menu.Content>
+            <Menu.Item value="datos" asChild>
+              <RouterLink to="/empresa">Datos</RouterLink>
+            </Menu.Item>
+            <Menu.Item value="usuarios" asChild>
+              <RouterLink to="/empresa/usuarios">Usuarios</RouterLink>
+            </Menu.Item>
+          </Menu.Content>
+        </Menu.Positioner>
+      </Portal>
+    </Menu.Root>
   </>
 );
 
@@ -57,6 +87,7 @@ export const router = createBrowserRouter([
       { path: "recibos", element: <ReceiptsPage /> },
       { path: "cuentas-por-cobrar", element: <AccountsReceivablePage /> },
       { path: "empresa", element: <CompanyPage /> },
+      { path: "empresa/usuarios", element: <UsersPage /> },
     ],
   },
 ]);
