@@ -1,6 +1,6 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { http, HttpResponse } from "msw";
+import { delay, http, HttpResponse } from "msw";
 
 import { CompanyName } from "../../auth";
 import { renderWithProviders } from "../../../shared/test/renderWithProviders";
@@ -162,4 +162,284 @@ it("envía los datos sin espacios alrededor y los muestra así", async () => {
   expect(await screen.findByText(/datos guardados/i)).toBeInTheDocument();
   expect(recibido.documento_fiscal).toBe("9007654321");
   expect(screen.getByLabelText(/nit/i)).toHaveValue("9007654321");
+});
+
+const ME = "/api/v1/auth/me";
+
+// Un archivo de mentira con el tipo y el peso pedidos: el contenido no importa, solo su tipo y peso.
+function imagen(nombre = "logo.png", tipo = "image/png", bytes = 100) {
+  return new File([new Uint8Array(bytes)], nombre, { type: tipo });
+}
+
+it("al elegir un logo muestra la vista previa y no lo sube hasta pulsar Guardar", async () => {
+  let subido = false;
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({ user_name: "Johan", company_name: "Panadería Luna", logo_version: "" }),
+    ),
+    http.put(`${URL}/logo`, () => {
+      subido = true;
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.upload(await screen.findByLabelText(/^logo$/i), imagen());
+
+  expect(screen.getByRole("img", { name: /vista previa del logo/i })).toBeInTheDocument();
+  expect(subido).toBe(false);
+});
+
+it("al guardar con un logo elegido manda primero los datos y después el logo", async () => {
+  const orden: string[] = [];
+  let cuerpoDelLogo = "";
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({ user_name: "Johan", company_name: "Panadería Luna", logo_version: "" }),
+    ),
+    http.patch(URL, () => {
+      orden.push("datos");
+      return HttpResponse.json(EMPRESA);
+    }),
+    http.put(`${URL}/logo`, async ({ request }) => {
+      orden.push("logo");
+      // Cuerpo crudo y no `request.formData()`: el File de jsdom no es el de Node y el analizador
+      // de multipart de undici lo rechaza. Por la misma razon, al pasar de jsdom a undici el File
+      // se vuelve un Blob y pierde su nombre: aqui solo se puede ver el campo y el tipo.
+      cuerpoDelLogo = await request.text();
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.upload(await screen.findByLabelText(/^logo$/i), imagen());
+  await user.click(screen.getByRole("button", { name: /guardar/i }));
+
+  // El aviso de éxito espera a que termine todo: cuando aparece, los dos envíos ya ocurrieron.
+  expect(await screen.findByText(/datos guardados/i)).toBeInTheDocument();
+  expect(orden).toEqual(["datos", "logo"]);
+  expect(cuerpoDelLogo).toContain('name="file"');
+  expect(cuerpoDelLogo).toContain("Content-Type: image/png");
+});
+
+it.each([
+  {
+    caso: "no es PNG, JPG ni WebP",
+    archivo: () => imagen("logo.gif", "image/gif"),
+    mensaje: "El logo debe ser una imagen PNG, JPG o WebP",
+  },
+  {
+    caso: "pesa más de 5 MB",
+    archivo: () => imagen("logo.png", "image/png", 5 * 1024 * 1024 + 1),
+    mensaje: "El logo no puede pesar más de 5 MB",
+  },
+])("un archivo que $caso muestra su mensaje y no lo sube", async ({ archivo, mensaje }) => {
+  let subido = false;
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({ user_name: "Johan", company_name: "Panadería Luna", logo_version: "" }),
+    ),
+    http.patch(URL, () => HttpResponse.json(EMPRESA)),
+    http.put(`${URL}/logo`, () => {
+      subido = true;
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  // Sin applyAccept: el selector de archivos del navegador filtra por `accept`, pero el usuario
+  // puede elegir "Todos los archivos"; aqui se prueba lo que pasa cuando eso ocurre.
+  const user = userEvent.setup({ applyAccept: false });
+
+  renderPage();
+  await user.upload(await screen.findByLabelText(/^logo$/i), archivo());
+
+  expect(screen.getByText(mensaje)).toBeInTheDocument();
+  expect(screen.queryByRole("img", { name: /vista previa del logo/i })).not.toBeInTheDocument();
+
+  // Guardar los demas datos sigue funcionando, pero sin el logo rechazado.
+  await user.click(screen.getByRole("button", { name: /guardar/i }));
+  expect(await screen.findByText(/datos guardados/i)).toBeInTheDocument();
+  expect(subido).toBe(false);
+});
+
+it("si el backend rechaza el logo muestra su mensaje y no avisa que se guardó", async () => {
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({ user_name: "Johan", company_name: "Panadería Luna", logo_version: "" }),
+    ),
+    http.patch(URL, () => HttpResponse.json(EMPRESA)),
+    // Lo que el front no puede revisar solo (los pixeles, una imagen danada) lo dice el backend.
+    http.put(`${URL}/logo`, () =>
+      HttpResponse.json(
+        { message: "La imagen está dañada y no se puede abrir" },
+        { status: 422 },
+      ),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.upload(await screen.findByLabelText(/^logo$/i), imagen());
+  await user.click(screen.getByRole("button", { name: /guardar/i }));
+
+  expect(await screen.findByText(/La imagen está dañada y no se puede abrir/)).toBeInTheDocument();
+  expect(screen.queryByText(/datos guardados/i)).not.toBeInTheDocument();
+});
+
+it("si los datos se guardan pero el logo falla, el aviso dice que los datos sí se guardaron", async () => {
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({ user_name: "Johan", company_name: "Panadería Luna", logo_version: "" }),
+    ),
+    http.patch(URL, () => HttpResponse.json(EMPRESA)),
+    http.put(`${URL}/logo`, () =>
+      HttpResponse.json({ message: "La imagen está dañada y no se puede abrir" }, { status: 422 }),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.upload(await screen.findByLabelText(/^logo$/i), imagen());
+  await user.click(screen.getByRole("button", { name: /guardar/i }));
+
+  expect(
+    await screen.findByText(
+      "Los datos se guardaron, pero el logo no: La imagen está dañada y no se puede abrir",
+    ),
+  ).toBeInTheDocument();
+});
+
+it("quitar el logo actual y guardar manda los datos y luego el borrado del logo", async () => {
+  const orden: string[] = [];
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({
+        user_name: "Johan",
+        company_name: "Panadería Luna",
+        logo_version: "empresas/1/logo-abc.png",
+      }),
+    ),
+    http.patch(URL, () => {
+      orden.push("datos");
+      return HttpResponse.json(EMPRESA);
+    }),
+    http.delete(`${URL}/logo`, () => {
+      orden.push("quitar logo");
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  expect(await screen.findByRole("img", { name: /logo de la empresa/i })).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: /quitar logo/i }));
+
+  // Quitarlo solo lo marca: sigue sin borrarse nada hasta pulsar Guardar.
+  expect(screen.queryByRole("img", { name: /logo de la empresa/i })).not.toBeInTheDocument();
+  expect(orden).toEqual([]);
+
+  await user.click(screen.getByRole("button", { name: /guardar/i }));
+
+  expect(await screen.findByText(/datos guardados/i)).toBeInTheDocument();
+  expect(orden).toEqual(["datos", "quitar logo"]);
+});
+
+it("después de guardar con un logo, guardar otra vez no lo vuelve a enviar", async () => {
+  let guardadosDeDatos = 0;
+  let logosEnviados = 0;
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({ user_name: "Johan", company_name: "Panadería Luna", logo_version: "" }),
+    ),
+    http.patch(URL, () => {
+      guardadosDeDatos += 1;
+      return HttpResponse.json(EMPRESA);
+    }),
+    http.put(`${URL}/logo`, () => {
+      logosEnviados += 1;
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.upload(await screen.findByLabelText(/^logo$/i), imagen());
+  await user.click(screen.getByRole("button", { name: /guardar/i }));
+  expect(await screen.findByText(/datos guardados/i)).toBeInTheDocument();
+  // El logo ya quedo guardado: la vista previa del archivo elegido ya no tiene sentido.
+  expect(screen.queryByRole("img", { name: /vista previa del logo/i })).not.toBeInTheDocument();
+
+  // Un cambio cualquiera y otro Guardar: solo viajan los datos.
+  const telefono = screen.getByLabelText(/teléfono/i);
+  await user.clear(telefono);
+  await user.type(telefono, "3009999999");
+  await user.click(screen.getByRole("button", { name: /guardar/i }));
+
+  await waitFor(() => expect(guardadosDeDatos).toBe(2));
+  expect(logosEnviados).toBe(1);
+});
+
+it("quitar el logo avisa que se quitará al guardar, y deshacer lo devuelve sin borrar nada", async () => {
+  let borrado = false;
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({
+        user_name: "Johan",
+        company_name: "Panadería Luna",
+        logo_version: "empresas/1/logo-abc.png",
+      }),
+    ),
+    http.patch(URL, () => HttpResponse.json(EMPRESA)),
+    http.delete(`${URL}/logo`, () => {
+      borrado = true;
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: /quitar logo/i }));
+
+  expect(screen.getByText(/el logo se quitará al guardar/i)).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: /deshacer/i }));
+
+  expect(screen.getByRole("img", { name: /logo de la empresa/i })).toBeInTheDocument();
+  expect(screen.queryByText(/el logo se quitará al guardar/i)).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: /guardar/i }));
+  expect(await screen.findByText(/datos guardados/i)).toBeInTheDocument();
+  expect(borrado).toBe(false);
+});
+
+it("no muestra el formulario hasta saber cuál es el logo actual", async () => {
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    // /auth/me tarda: los datos de la empresa llegan antes que el logo.
+    http.get(ME, async () => {
+      await delay(300);
+      return HttpResponse.json({
+        user_name: "Johan",
+        company_name: "Panadería Luna",
+        logo_version: "empresas/1/logo-abc.png",
+      });
+    }),
+  );
+
+  renderPage();
+
+  // En cuanto el formulario aparece, el logo actual ya tiene que estar: si no, se vería un
+  // instante "sin logo" y se podría subir uno nuevo a ciegas.
+  await screen.findByLabelText(/nombre/i);
+  expect(screen.getByRole("img", { name: /logo de la empresa/i })).toBeInTheDocument();
 });

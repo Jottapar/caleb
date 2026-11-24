@@ -10,6 +10,12 @@ if (!window.PointerEvent) {
   window.PointerEvent = MouseEvent as typeof PointerEvent;
 }
 
+// jsdom tampoco trae URL.createObjectURL (la vista previa de una imagen elegida lo usa).
+if (!URL.createObjectURL) {
+  URL.createObjectURL = () => "blob:vista-previa";
+  URL.revokeObjectURL = () => {};
+}
+
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());

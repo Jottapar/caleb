@@ -1,6 +1,7 @@
-import { Button, Field, Input, Stack, Text } from "@chakra-ui/react";
-import { useState } from "react";
+import { Button, Field, Image, Input, Stack, Text } from "@chakra-ui/react";
+import { useEffect, useRef, useState } from "react";
 
+import { CompanyLogo } from "../../../shared/components/ui/CompanyLogo";
 import { FORMATO_CORREO, SOLO_DIGITOS } from "../../../shared/lib/validators";
 import type { Company } from "../types";
 
@@ -26,17 +27,35 @@ function validate(nit: string, telefono: string, email: string) {
   return errors;
 }
 
+// Las mismas reglas del backend (es quien manda), para avisar antes de enviar. Los pixeles solo
+// los revisa el backend: leerlos aqui exigiria decodificar la imagen.
+const TIPOS_LOGO = ["image/png", "image/jpeg", "image/webp"];
+const PESO_MAXIMO_LOGO = 5 * 1024 * 1024; // bytes
+
+function validateLogo(file: File): string | null {
+  if (!TIPOS_LOGO.includes(file.type)) {
+    return "El logo debe ser una imagen PNG, JPG o WebP";
+  }
+  if (file.size > PESO_MAXIMO_LOGO) {
+    return "El logo no puede pesar más de 5 MB";
+  }
+  return null;
+}
+
 type Props = {
   initialValues: Company;
+  // El logo que la empresa tiene hoy ('' si no tiene). Viene de /auth/me, no de /company.
+  currentLogoVersion: string;
   // Se llama en cada intento de guardar, antes de validar: la pagina limpia con esto el
   // aviso (exito o error) del intento anterior.
   onSubmitAttempt: () => void;
-  onSubmit: (data: Company) => void;
+  // `onSaved` hay que llamarlo cuando el guardado termino bien: reinicia lo que se hizo con el logo.
+  onSubmit: (data: Company, logo: File | "remove" | null, onSaved: () => void) => void;
   isSubmitting: boolean;
   errorMessage: string | null;
 };
 
-export function CompanyForm({ initialValues, onSubmitAttempt, onSubmit, isSubmitting, errorMessage }: Props) {
+export function CompanyForm({ initialValues, currentLogoVersion, onSubmitAttempt, onSubmit, isSubmitting, errorMessage }: Props) {
   // El formulario se monta solo cuando los datos ya llegaron, por eso puede
   // arrancar el estado con ellos.
   const [nombre, setNombre] = useState(initialValues.nombre);
@@ -45,6 +64,52 @@ export function CompanyForm({ initialValues, onSubmitAttempt, onSubmit, isSubmit
   const [telefono, setTelefono] = useState(initialValues.telefono);
   const [email, setEmail] = useState(initialValues.email);
   const [errors, setErrors] = useState<FormErrors>({});
+  // El logo elegido todavia no se sube: viaja al pulsar Guardar. `previewUrl` es una direccion
+  // temporal del navegador para ver la imagen elegida; se crea al elegir el archivo (no en el
+  // render) y se libera en el efecto de abajo.
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
+  const [logoError, setLogoError] = useState<string | null>(null);
+  // "Quitar logo" solo lo marca; el borrado ocurre al pulsar Guardar, como el resto de los cambios.
+  const [logoRemoved, setLogoRemoved] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+
+  // La direccion temporal retiene la imagen en memoria hasta que se libera. Este efecto la libera
+  // cada vez que cambia (se elige otro archivo o se limpia) y al salir de la pantalla.
+  useEffect(() => {
+    return () => {
+      if (logoPreviewUrl) {
+        URL.revokeObjectURL(logoPreviewUrl);
+      }
+    };
+  }, [logoPreviewUrl]);
+
+  // Tras guardar, el logo elegido o quitado ya es el actual: se limpia lo pendiente para que
+  // el siguiente Guardar no lo vuelva a enviar (ni a borrar otro que se subio mientras tanto).
+  function resetLogo() {
+    setLogoFile(null);
+    setLogoPreviewUrl(null);
+    setLogoRemoved(false);
+    if (logoInputRef.current) {
+      logoInputRef.current.value = "";
+    }
+  }
+
+  function handleLogoChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    const error = file ? validateLogo(file) : null;
+    setLogoError(error);
+    if (error) {
+      // Un archivo rechazado no se queda elegido: ni se sube ni se muestra, y el campo se vacia
+      // para que no siga mostrando el nombre de un archivo que no vale.
+      setLogoFile(null);
+      setLogoPreviewUrl(null);
+      event.target.value = "";
+      return;
+    }
+    setLogoFile(file);
+    setLogoPreviewUrl(file ? URL.createObjectURL(file) : null);
+  }
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -70,7 +135,7 @@ export function CompanyForm({ initialValues, onSubmitAttempt, onSubmit, isSubmit
     if (Object.keys(nuevosErrores).length > 0) {
       return;
     }
-    onSubmit(data);
+    onSubmit(data, logoFile ?? (logoRemoved ? "remove" : null), resetLogo);
   }
 
   return (
@@ -107,6 +172,37 @@ export function CompanyForm({ initialValues, onSubmitAttempt, onSubmit, isSubmit
         <Input inputMode="email" value={email} onChange={(event) => setEmail(event.target.value)} />
         <Field.ErrorText>{errors.email}</Field.ErrorText>
       </Field.Root>
+
+      <Field.Root invalid={Boolean(logoError)}>
+        <Field.Label>Logo</Field.Label>
+        <Input
+          ref={logoInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          onChange={handleLogoChange}
+        />
+        <Field.HelperText>PNG, JPG o WebP, de hasta 5 MB.</Field.HelperText>
+        <Field.ErrorText>{logoError}</Field.ErrorText>
+      </Field.Root>
+      {!logoPreviewUrl && currentLogoVersion && !logoRemoved && (
+        <Stack alignSelf="start" gap="2">
+          <CompanyLogo version={currentLogoVersion} maxH="32" />
+          <Button type="button" variant="outline" size="sm" onClick={() => setLogoRemoved(true)}>
+            Quitar logo
+          </Button>
+        </Stack>
+      )}
+      {currentLogoVersion && logoRemoved && !logoPreviewUrl && (
+        <Stack alignSelf="start" gap="2">
+          <Text color="fg.muted">El logo se quitará al guardar.</Text>
+          <Button type="button" variant="outline" size="sm" onClick={() => setLogoRemoved(false)}>
+            Deshacer
+          </Button>
+        </Stack>
+      )}
+      {logoPreviewUrl && (
+        <Image src={logoPreviewUrl} alt="Vista previa del logo" maxH="32" alignSelf="start" />
+      )}
 
       {errorMessage && <Text color="fg.error">{errorMessage}</Text>}
 
