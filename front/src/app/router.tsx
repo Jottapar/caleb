@@ -2,6 +2,7 @@ import { Link } from "@chakra-ui/react";
 import { createBrowserRouter, Link as RouterLink } from "react-router-dom";
 
 import { CompanyName, LoginPage, LogoutButton, RequireAuth } from "../modules/auth";
+import { CompanyPage } from "../modules/company";
 import { HomePage } from "../modules/home";
 import { ItemsPage } from "../modules/items";
 import { AccountsReceivablePage, ReceiptsPage } from "../modules/receipts";
@@ -31,6 +32,9 @@ const nav = (
     <Link asChild color="white" fontWeight="medium" px="2" py="1" borderRadius="md" bg="whiteAlpha.100">
       <RouterLink to="/cuentas-por-cobrar">Cuentas por cobrar</RouterLink>
     </Link>
+    <Link asChild color="white" fontWeight="medium" px="2" py="1" borderRadius="md" bg="whiteAlpha.100">
+      <RouterLink to="/empresa">Empresa</RouterLink>
+    </Link>
   </>
 );
 
@@ -52,6 +56,7 @@ export const router = createBrowserRouter([
       { path: "productos", element: <ItemsPage /> },
       { path: "recibos", element: <ReceiptsPage /> },
       { path: "cuentas-por-cobrar", element: <AccountsReceivablePage /> },
+      { path: "empresa", element: <CompanyPage /> },
     ],
   },
 ]);

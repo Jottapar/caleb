@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.modules.auth.router import router as auth_router
 from app.modules.banks.router import router as banks_router
+from app.modules.companies.router import router as companies_router
 from app.modules.health.router import router as health_router
 from app.modules.items.router import router as items_router
 from app.modules.receipts.router import router as receipts_router
@@ -23,3 +24,4 @@ router.include_router(services_router)
 router.include_router(technical_sheets_router)
 router.include_router(taxes_router)
 router.include_router(receipts_router)
+router.include_router(companies_router)

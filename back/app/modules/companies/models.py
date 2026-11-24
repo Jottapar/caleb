@@ -13,7 +13,11 @@ class Company(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     nombre: str = Field(max_length=150)
+    # El NIT: solo digitos, el ultimo es el digito de verificacion. En pantalla se llama NIT.
     documento_fiscal: str = Field(max_length=30, default="")
+    direccion: str = Field(max_length=200, default="")
+    telefono: str = Field(max_length=30, default="")
+    email: str = Field(max_length=150, default="")
     pais: str = Field(max_length=2, default="CO")
     moneda: str = Field(max_length=3, default="COP")
     activa: bool = Field(default=True)

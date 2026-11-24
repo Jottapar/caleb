@@ -1,8 +1,7 @@
-import re
-
 from sqlmodel import Session, select
 
 from app.core.errors import BusinessError, NotFoundError
+from app.core.validators import FORMATO_CORREO, SOLO_DIGITOS
 from app.modules.banks import service as banks_service
 from app.modules.third_parties.models import ThirdParty, ThirdPartyBankAccount
 from app.modules.third_parties.schemas import BankAccountData, ThirdPartyCreate, ThirdPartyUpdate
@@ -11,12 +10,6 @@ from app.modules.third_parties.schemas import BankAccountData, ThirdPartyCreate,
 TIPOS_VALIDOS = {"cliente", "proveedor"}
 TIPOS_CUENTA_VALIDOS = {"ahorros", "corriente"}
 MAX_DIGITOS_CUENTA = 20
-
-# Algo, una arroba, algo, un punto y algo, sin espacios: `nombre@dominio.com`.
-# No intenta ser perfecto (eso solo lo confirma enviar un correo); atrapa los errores de tecleo.
-FORMATO_CORREO = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
-# [0-9] y no \d: \d tambien acepta digitos de otros alfabetos, como "٣".
-SOLO_DIGITOS = re.compile(r"[0-9]+")
 
 # Columna -> como se le nombra al usuario en el mensaje de error.
 # Obligatorios para todo tercero, sea cliente o proveedor.

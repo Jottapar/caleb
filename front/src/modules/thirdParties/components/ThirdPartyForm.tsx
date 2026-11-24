@@ -1,12 +1,11 @@
 import { Button, Field, Heading, HStack, Input, NativeSelect, Stack, Text } from "@chakra-ui/react";
 import { useState } from "react";
 
+import { FORMATO_CORREO, SOLO_DIGITOS } from "../../../shared/lib/validators";
 import type { AccountType, Bank, ThirdParty, ThirdPartyCreate, ThirdPartyType } from "../types";
 
-// Las mismas reglas que valida el backend (third_parties/service.py). El backend
-// es la regla; esto es para avisar antes de enviar.
-const FORMATO_CORREO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-const SOLO_DIGITOS = /^[0-9]+$/;
+// Las reglas de formato vienen de shared/lib/validators. El backend es la regla;
+// esto es para avisar antes de enviar.
 const MAX_DIGITOS_CUENTA = 20;
 
 type FormErrors = {
