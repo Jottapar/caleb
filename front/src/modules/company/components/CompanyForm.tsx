@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { CompanyLogo } from "../../../shared/components/ui/CompanyLogo";
 import { FORMATO_CORREO, SOLO_DIGITOS } from "../../../shared/lib/validators";
 import type { Company } from "../types";
+import { LogoCropDialog } from "./LogoCropDialog";
 
 type FormErrors = {
   nit?: string;
@@ -30,14 +31,13 @@ function validate(nit: string, telefono: string, email: string) {
 // Las mismas reglas del backend (es quien manda), para avisar antes de enviar. Los pixeles solo
 // los revisa el backend: leerlos aqui exigiria decodificar la imagen.
 const TIPOS_LOGO = ["image/png", "image/jpeg", "image/webp"];
+
 const PESO_MAXIMO_LOGO = 5 * 1024 * 1024; // bytes
 
+// Solo el formato del archivo original: el peso se revisa después, sobre el logo ya recortado.
 function validateLogo(file: File): string | null {
   if (!TIPOS_LOGO.includes(file.type)) {
     return "El logo debe ser una imagen PNG, JPG o WebP";
-  }
-  if (file.size > PESO_MAXIMO_LOGO) {
-    return "El logo no puede pesar más de 5 MB";
   }
   return null;
 }
@@ -70,6 +70,9 @@ export function CompanyForm({ initialValues, currentLogoVersion, onSubmitAttempt
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
   const [logoError, setLogoError] = useState<string | null>(null);
+  // La imagen original que el usuario está recortando y su dirección temporal; null si no hay
+  // recorte abierto.
+  const [cropTarget, setCropTarget] = useState<{ file: File; src: string } | null>(null);
   // "Quitar logo" solo lo marca; el borrado ocurre al pulsar Guardar, como el resto de los cambios.
   const [logoRemoved, setLogoRemoved] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -83,6 +86,16 @@ export function CompanyForm({ initialValues, currentLogoVersion, onSubmitAttempt
       }
     };
   }, [logoPreviewUrl]);
+
+  // Igual que con la vista previa: la dirección temporal de la imagen que se está recortando se
+  // libera cuando el recorte se cierra y también si el usuario sale de la pantalla con él abierto.
+  useEffect(() => {
+    return () => {
+      if (cropTarget) {
+        URL.revokeObjectURL(cropTarget.src);
+      }
+    };
+  }, [cropTarget]);
 
   // Tras guardar, el logo elegido o quitado ya es el actual: se limpia lo pendiente para que
   // el siguiente Guardar no lo vuelva a enviar (ni a borrar otro que se subio mientras tanto).
@@ -100,15 +113,50 @@ export function CompanyForm({ initialValues, currentLogoVersion, onSubmitAttempt
     const error = file ? validateLogo(file) : null;
     setLogoError(error);
     if (error) {
-      // Un archivo rechazado no se queda elegido: ni se sube ni se muestra, y el campo se vacia
-      // para que no siga mostrando el nombre de un archivo que no vale.
-      setLogoFile(null);
-      setLogoPreviewUrl(null);
+      // Un archivo rechazado no se queda elegido, y el campo se vacia para que no siga mostrando
+      // el nombre de un archivo que no vale. Un logo que ya se habia recortado y confirmado no se
+      // toca: solo lo reemplaza otro cuyo recorte se confirme.
       event.target.value = "";
       return;
     }
-    setLogoFile(file);
-    setLogoPreviewUrl(file ? URL.createObjectURL(file) : null);
+    // El archivo elegido todavía no es el logo: primero se recorta. Guardar nunca envía la imagen
+    // original sin recortar, porque el logo pendiente solo cambia al confirmar el recorte.
+    setCropTarget(file ? { file, src: URL.createObjectURL(file) } : null);
+  }
+
+  // Cierra el recorte. La dirección temporal de la imagen original la libera el efecto de abajo.
+  function closeCrop() {
+    setCropTarget(null);
+  }
+
+  // Igual que un archivo rechazado: no se queda elegido y el campo se vacía para que no siga
+  // mostrando el nombre de un archivo que no se va a usar.
+  function clearLogoInput() {
+    if (logoInputRef.current) {
+      logoInputRef.current.value = "";
+    }
+  }
+
+  function handleCropCancel() {
+    closeCrop();
+    clearLogoInput();
+  }
+
+  // Recibe el logo ya recortado. Cierra el recorte y, si el recorte no pesa de más, lo deja como
+  // el logo pendiente, con su vista previa.
+  function handleCropConfirm(cropped: File) {
+    closeCrop();
+    if (cropped.size > PESO_MAXIMO_LOGO) {
+      setLogoError("El logo no puede pesar más de 5 MB");
+      clearLogoInput();
+      return;
+    }
+    setLogoFile(cropped);
+    setLogoPreviewUrl(URL.createObjectURL(cropped));
+    // El logo ya quedó elegido (recortado, con su vista previa). Se vacía el campo del archivo
+    // original: si siguiera ahí, el navegador no avisaría al elegir ese mismo archivo otra vez
+    // y el usuario no podría volver a recortarlo.
+    clearLogoInput();
   }
 
   function handleSubmit(event: React.FormEvent) {
@@ -209,6 +257,15 @@ export function CompanyForm({ initialValues, currentLogoVersion, onSubmitAttempt
       <Button type="submit" colorPalette="brand" alignSelf="start" loading={isSubmitting}>
         Guardar
       </Button>
+
+      {cropTarget && (
+        <LogoCropDialog
+          file={cropTarget.file}
+          imageSrc={cropTarget.src}
+          onConfirm={handleCropConfirm}
+          onCancel={handleCropCancel}
+        />
+      )}
     </Stack>
   );
 }

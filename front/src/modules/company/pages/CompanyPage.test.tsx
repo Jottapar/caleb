@@ -1,11 +1,50 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
+import { vi } from "vitest";
 
 import { CompanyName } from "../../auth";
+import { cropImage } from "../../../shared/lib/cropImage";
 import { renderWithProviders } from "../../../shared/test/renderWithProviders";
 import { server } from "../../../shared/test/server";
 import { CompanyPage } from "./CompanyPage";
+
+// jsdom no carga imágenes ni mide nada (no trae ResizeObserver), así que el Cropper real no
+// funciona aquí. Se reemplaza solo esta librería de terceros por un componente que, al montarse,
+// avisa de un área elegida fija, como haría el real cuando el usuario termina de recortar.
+// `avisarArea` en false simula el rato en que el Cropper real todavía está cargando la imagen y
+// no ha calculado ningún área.
+const cropper = vi.hoisted(() => ({ avisarArea: true }));
+beforeEach(() => {
+  cropper.avisarArea = true;
+});
+
+vi.mock("react-easy-crop", async () => {
+  const { useEffect } = await import("react");
+  const area = { x: 0, y: 0, width: 100, height: 100 };
+  function CropperFalso({
+    onCropComplete,
+  }: {
+    onCropComplete: (a: typeof area, b: typeof area) => void;
+  }) {
+    useEffect(() => {
+      if (cropper.avisarArea) {
+        onCropComplete(area, area);
+      }
+    }, [onCropComplete]);
+    return <div />;
+  }
+  return { default: CropperFalso };
+});
+
+// jsdom tampoco dibuja en un <canvas>. El archivo "recortado" que devuelve lleva el texto
+// "recortado" dentro, para poder distinguirlo del original en lo que se envía al backend.
+vi.mock("../../../shared/lib/cropImage", () => ({
+  cropImage: vi.fn(
+    async (_src: string, _area: unknown, nombre: string, tipo: string) =>
+      new File(["recortado"], nombre, { type: tipo }),
+  ),
+}));
 
 const URL = "/api/v1/company";
 
@@ -171,6 +210,372 @@ function imagen(nombre = "logo.png", tipo = "image/png", bytes = 100) {
   return new File([new Uint8Array(bytes)], nombre, { type: tipo });
 }
 
+// Elige el archivo y confirma el recorte: el camino que ahora sigue un logo hasta quedar elegido.
+async function elegirLogo(user: ReturnType<typeof userEvent.setup>, archivo = imagen()) {
+  await user.upload(await screen.findByLabelText(/^logo$/i), archivo);
+  await user.click(await screen.findByRole("button", { name: /^recortar$/i }));
+}
+
+it("al elegir una imagen válida se abre el recorte y todavía no hay vista previa", async () => {
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({ user_name: "Johan", company_name: "Panadería Luna", logo_version: "" }),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.upload(await screen.findByLabelText(/^logo$/i), imagen());
+
+  expect(await screen.findByRole("dialog", { name: /recortar logo/i })).toBeInTheDocument();
+  expect(screen.queryByRole("img", { name: /vista previa del logo/i })).not.toBeInTheDocument();
+});
+
+it("al confirmar el recorte se cierra el diálogo y se muestra la vista previa", async () => {
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({ user_name: "Johan", company_name: "Panadería Luna", logo_version: "" }),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.upload(await screen.findByLabelText(/^logo$/i), imagen());
+  await user.click(await screen.findByRole("button", { name: /^recortar$/i }));
+
+  expect(await screen.findByRole("img", { name: /vista previa del logo/i })).toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+it("al guardar tras confirmar el recorte se envía el archivo recortado y no el original", async () => {
+  let cuerpoDelLogo = "";
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({ user_name: "Johan", company_name: "Panadería Luna", logo_version: "" }),
+    ),
+    http.patch(URL, () => HttpResponse.json(EMPRESA)),
+    http.put(`${URL}/logo`, async ({ request }) => {
+      cuerpoDelLogo = await request.text();
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  const user = userEvent.setup();
+
+  // El original es PNG y el recorte sale como WebP: el navegador puede devolver otro tipo del
+  // pedido. Del archivo que sale de jsdom solo sobrevive su tipo (ni nombre ni contenido), y
+  // con él se distingue cuál de los dos viajó.
+  vi.mocked(cropImage).mockResolvedValueOnce(
+    new File(["recortado"], "logo.png", { type: "image/webp" }),
+  );
+
+  renderPage();
+  await elegirLogo(user, imagen("logo.png", "image/png"));
+  await user.click(screen.getByRole("button", { name: /guardar/i }));
+
+  expect(await screen.findByText(/datos guardados/i)).toBeInTheDocument();
+  expect(cuerpoDelLogo).toContain("Content-Type: image/webp");
+  expect(cuerpoDelLogo).not.toContain("Content-Type: image/png");
+});
+
+it("si el archivo recortado pesa más de 5 MB muestra su mensaje y no queda elegido", async () => {
+  let subido = false;
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({ user_name: "Johan", company_name: "Panadería Luna", logo_version: "" }),
+    ),
+    http.patch(URL, () => HttpResponse.json(EMPRESA)),
+    http.put(`${URL}/logo`, () => {
+      subido = true;
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  vi.mocked(cropImage).mockResolvedValueOnce(
+    imagen("logo.png", "image/png", 5 * 1024 * 1024 + 1),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await elegirLogo(user);
+
+  expect(await screen.findByText("El logo no puede pesar más de 5 MB")).toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(screen.queryByRole("img", { name: /vista previa del logo/i })).not.toBeInTheDocument();
+
+  // Guardar los demás datos sigue funcionando, pero sin el logo rechazado.
+  await user.click(screen.getByRole("button", { name: /guardar/i }));
+  expect(await screen.findByText(/datos guardados/i)).toBeInTheDocument();
+  expect(subido).toBe(false);
+});
+
+it("al cancelar el recorte se cierra el diálogo, el campo queda vacío y el logo actual no cambia", async () => {
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({
+        user_name: "Johan",
+        company_name: "Panadería Luna",
+        logo_version: "empresas/1/logo-abc.png",
+      }),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  const campo = (await screen.findByLabelText(/^logo$/i)) as HTMLInputElement;
+  await user.upload(campo, imagen());
+  await user.click(await screen.findByRole("button", { name: /^cancelar$/i }));
+
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(campo.value).toBe("");
+  expect(screen.queryByRole("img", { name: /vista previa del logo/i })).not.toBeInTheDocument();
+  expect(screen.getByRole("img", { name: /logo de la empresa/i })).toBeInTheDocument();
+});
+
+it("el recorte explica que se arrastra la imagen y que se puede hacer zoom", async () => {
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({ user_name: "Johan", company_name: "Panadería Luna", logo_version: "" }),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.upload(await screen.findByLabelText(/^logo$/i), imagen());
+
+  expect(
+    await screen.findByText(
+      "Arrastra la imagen para moverla. Usa el deslizador o la rueda del ratón para acercar.",
+    ),
+  ).toBeInTheDocument();
+});
+
+it("el recorte tiene un deslizador de zoom de 1 a 3 que se puede mover", async () => {
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({ user_name: "Johan", company_name: "Panadería Luna", logo_version: "" }),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.upload(await screen.findByLabelText(/^logo$/i), imagen());
+  const zoom = await screen.findByRole("slider", { name: /zoom/i });
+
+  expect(zoom).toHaveAttribute("aria-valuemin", "1");
+  expect(zoom).toHaveAttribute("aria-valuemax", "3");
+  expect(zoom).toHaveAttribute("aria-valuenow", "1");
+
+  zoom.focus();
+  await user.keyboard("{ArrowRight}");
+
+  expect(Number(zoom.getAttribute("aria-valuenow"))).toBeGreaterThan(1);
+});
+
+it("si el recorte falla muestra un mensaje en el diálogo y se puede cancelar", async () => {
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({ user_name: "Johan", company_name: "Panadería Luna", logo_version: "" }),
+    ),
+  );
+  vi.mocked(cropImage).mockRejectedValueOnce(new Error("No se pudo abrir la imagen"));
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.upload(await screen.findByLabelText(/^logo$/i), imagen());
+  await user.click(await screen.findByRole("button", { name: /^recortar$/i }));
+
+  expect(
+    await screen.findByText("No se pudo recortar la imagen. Prueba con otra."),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("dialog", { name: /recortar logo/i })).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: /^cancelar$/i }));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+it("mientras se recorta, Recortar queda deshabilitado y un segundo clic no recorta otra vez", async () => {
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({ user_name: "Johan", company_name: "Panadería Luna", logo_version: "" }),
+    ),
+  );
+  // El recorte queda "en curso" hasta que el test lo termine a mano.
+  let terminarRecorte!: (archivo: File) => void;
+  vi.mocked(cropImage).mockClear();
+  vi.mocked(cropImage).mockImplementationOnce(
+    () => new Promise<File>((resolve) => (terminarRecorte = resolve)),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.upload(await screen.findByLabelText(/^logo$/i), imagen());
+  const recortar = await screen.findByRole("button", { name: /^recortar$/i });
+  await user.click(recortar);
+
+  expect(recortar).toBeDisabled();
+  await user.click(recortar);
+  expect(cropImage).toHaveBeenCalledTimes(1);
+
+  await act(async () => terminarRecorte(imagen()));
+  expect(await screen.findByRole("img", { name: /vista previa del logo/i })).toBeInTheDocument();
+});
+
+it("al pulsar Esc se cierra el recorte igual que al cancelar", async () => {
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({ user_name: "Johan", company_name: "Panadería Luna", logo_version: "" }),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  const campo = (await screen.findByLabelText(/^logo$/i)) as HTMLInputElement;
+  await user.upload(campo, imagen());
+  await screen.findByRole("dialog", { name: /recortar logo/i });
+  await user.keyboard("{Escape}");
+
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(campo.value).toBe("");
+  expect(screen.queryByRole("img", { name: /vista previa del logo/i })).not.toBeInTheDocument();
+});
+
+it("si se elige otro archivo y se cancela el recorte, se conserva el logo ya confirmado", async () => {
+  let logosEnviados = 0;
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({ user_name: "Johan", company_name: "Panadería Luna", logo_version: "" }),
+    ),
+    http.patch(URL, () => HttpResponse.json(EMPRESA)),
+    http.put(`${URL}/logo`, () => {
+      logosEnviados += 1;
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await elegirLogo(user); // logo A: recortado y confirmado
+  await user.upload(await screen.findByLabelText(/^logo$/i), imagen("otro.png")); // archivo B
+  await user.click(await screen.findByRole("button", { name: /^cancelar$/i }));
+
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(screen.getByRole("img", { name: /vista previa del logo/i })).toBeInTheDocument();
+
+  // Guardar sigue enviando el logo A.
+  await user.click(screen.getByRole("button", { name: /guardar/i }));
+  expect(await screen.findByText(/datos guardados/i)).toBeInTheDocument();
+  expect(logosEnviados).toBe(1);
+});
+
+it("un archivo rechazado por su formato tampoco borra el logo ya confirmado", async () => {
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({ user_name: "Johan", company_name: "Panadería Luna", logo_version: "" }),
+    ),
+  );
+  // Sin applyAccept: ver el comentario del test de archivos rechazados.
+  const user = userEvent.setup({ applyAccept: false });
+
+  renderPage();
+  await elegirLogo(user);
+  await user.upload(
+    await screen.findByLabelText(/^logo$/i),
+    imagen("logo.gif", "image/gif"),
+  );
+
+  expect(screen.getByText("El logo debe ser una imagen PNG, JPG o WebP")).toBeInTheDocument();
+  expect(screen.getByRole("img", { name: /vista previa del logo/i })).toBeInTheDocument();
+});
+
+it("si se sale de la pantalla con el recorte abierto, se libera la imagen original", async () => {
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({ user_name: "Johan", company_name: "Panadería Luna", logo_version: "" }),
+    ),
+  );
+  // `URL` es aquí la ruta de la API, por eso se llega al URL del navegador por globalThis.
+  const crear = vi.spyOn(globalThis.URL, "createObjectURL");
+  const liberar = vi.spyOn(globalThis.URL, "revokeObjectURL");
+  const user = userEvent.setup();
+
+  const { unmount } = renderWithProviders([{ path: "/", element: <CompanyPage /> }]);
+  await user.upload(await screen.findByLabelText(/^logo$/i), imagen());
+  await screen.findByRole("dialog", { name: /recortar logo/i });
+  const direccionDeLaImagen = crear.mock.results[0].value;
+
+  unmount();
+
+  expect(liberar).toHaveBeenCalledWith(direccionDeLaImagen);
+  crear.mockRestore();
+  liberar.mockRestore();
+});
+
+it("Recortar queda deshabilitado hasta que el recorte tiene un área elegida", async () => {
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({ user_name: "Johan", company_name: "Panadería Luna", logo_version: "" }),
+    ),
+  );
+  cropper.avisarArea = false;
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.upload(await screen.findByLabelText(/^logo$/i), imagen());
+
+  expect(await screen.findByRole("button", { name: /^recortar$/i })).toBeDisabled();
+});
+
+it("al confirmar el recorte el campo del archivo queda vacío, para poder elegir el mismo archivo otra vez", async () => {
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({ user_name: "Johan", company_name: "Panadería Luna", logo_version: "" }),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  const campo = (await screen.findByLabelText(/^logo$/i)) as HTMLInputElement;
+  await user.upload(campo, imagen());
+  await user.click(await screen.findByRole("button", { name: /^recortar$/i }));
+
+  expect(await screen.findByRole("img", { name: /vista previa del logo/i })).toBeInTheDocument();
+  expect(campo.value).toBe("");
+});
+
+it("una foto original de más de 5 MB sí abre el recorte", async () => {
+  server.use(
+    http.get(URL, () => HttpResponse.json(EMPRESA)),
+    http.get(ME, () =>
+      HttpResponse.json({ user_name: "Johan", company_name: "Panadería Luna", logo_version: "" }),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  // El peso que se valida es el del recorte, no el de la foto original.
+  await user.upload(
+    await screen.findByLabelText(/^logo$/i),
+    imagen("foto.jpg", "image/jpeg", 5 * 1024 * 1024 + 1),
+  );
+
+  expect(await screen.findByRole("dialog", { name: /recortar logo/i })).toBeInTheDocument();
+  expect(screen.queryByText(/no puede pesar más de 5 MB/i)).not.toBeInTheDocument();
+});
+
 it("al elegir un logo muestra la vista previa y no lo sube hasta pulsar Guardar", async () => {
   let subido = false;
   server.use(
@@ -186,7 +591,7 @@ it("al elegir un logo muestra la vista previa y no lo sube hasta pulsar Guardar"
   const user = userEvent.setup();
 
   renderPage();
-  await user.upload(await screen.findByLabelText(/^logo$/i), imagen());
+  await elegirLogo(user);
 
   expect(screen.getByRole("img", { name: /vista previa del logo/i })).toBeInTheDocument();
   expect(subido).toBe(false);
@@ -216,7 +621,7 @@ it("al guardar con un logo elegido manda primero los datos y después el logo", 
   const user = userEvent.setup();
 
   renderPage();
-  await user.upload(await screen.findByLabelText(/^logo$/i), imagen());
+  await elegirLogo(user);
   await user.click(screen.getByRole("button", { name: /guardar/i }));
 
   // El aviso de éxito espera a que termine todo: cuando aparece, los dos envíos ya ocurrieron.
@@ -231,11 +636,6 @@ it.each([
     caso: "no es PNG, JPG ni WebP",
     archivo: () => imagen("logo.gif", "image/gif"),
     mensaje: "El logo debe ser una imagen PNG, JPG o WebP",
-  },
-  {
-    caso: "pesa más de 5 MB",
-    archivo: () => imagen("logo.png", "image/png", 5 * 1024 * 1024 + 1),
-    mensaje: "El logo no puede pesar más de 5 MB",
   },
 ])("un archivo que $caso muestra su mensaje y no lo sube", async ({ archivo, mensaje }) => {
   let subido = false;
@@ -258,6 +658,7 @@ it.each([
   await user.upload(await screen.findByLabelText(/^logo$/i), archivo());
 
   expect(screen.getByText(mensaje)).toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(screen.queryByRole("img", { name: /vista previa del logo/i })).not.toBeInTheDocument();
 
   // Guardar los demas datos sigue funcionando, pero sin el logo rechazado.
@@ -284,7 +685,7 @@ it("si el backend rechaza el logo muestra su mensaje y no avisa que se guardó",
   const user = userEvent.setup();
 
   renderPage();
-  await user.upload(await screen.findByLabelText(/^logo$/i), imagen());
+  await elegirLogo(user);
   await user.click(screen.getByRole("button", { name: /guardar/i }));
 
   expect(await screen.findByText(/La imagen está dañada y no se puede abrir/)).toBeInTheDocument();
@@ -305,7 +706,7 @@ it("si los datos se guardan pero el logo falla, el aviso dice que los datos sí 
   const user = userEvent.setup();
 
   renderPage();
-  await user.upload(await screen.findByLabelText(/^logo$/i), imagen());
+  await elegirLogo(user);
   await user.click(screen.getByRole("button", { name: /guardar/i }));
 
   expect(
@@ -372,7 +773,7 @@ it("después de guardar con un logo, guardar otra vez no lo vuelve a enviar", as
   const user = userEvent.setup();
 
   renderPage();
-  await user.upload(await screen.findByLabelText(/^logo$/i), imagen());
+  await elegirLogo(user);
   await user.click(screen.getByRole("button", { name: /guardar/i }));
   expect(await screen.findByText(/datos guardados/i)).toBeInTheDocument();
   // El logo ya quedo guardado: la vista previa del archivo elegido ya no tiene sentido.
