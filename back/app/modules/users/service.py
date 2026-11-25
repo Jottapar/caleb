@@ -1,6 +1,7 @@
 import unicodedata
 
 from sqlalchemy import func
+from psycopg.errors import UniqueViolation
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
@@ -10,7 +11,7 @@ from app.core.validators import FORMATO_CORREO
 from app.modules.companies.models import Company
 from app.modules.taxes import service as taxes_service
 from app.modules.users.models import User, UserCompany
-from app.modules.users.schemas import UserCreate, UserRead
+from app.modules.users.schemas import UserCreate, UserRead, UserUpdate
 
 
 def normalize_email(email: str) -> str:
@@ -55,10 +56,10 @@ MAX_LARGO = 150
 ROLES = ("admin", "usuario", "contador")
 
 
-def _validate_new_user(nombre: str, email: str, rol: str, password: str) -> None:
-    """Rechaza con BusinessError (422) los datos que no sirven. `nombre` y `email` ya vienen limpios.
+def _validate_user_fields(nombre: str, email: str, rol: str) -> None:
+    """Rechaza con BusinessError (422) un nombre, correo o rol que no sirve. Ya vienen limpios.
 
-    La contraseña no se limpia: los espacios de los lados cuentan como parte de ella.
+    Lo comparten crear y editar un usuario.
     """
     if not nombre:
         raise BusinessError("El nombre es obligatorio")
@@ -72,6 +73,14 @@ def _validate_new_user(nombre: str, email: str, rol: str, password: str) -> None
         raise BusinessError("El correo no tiene un formato válido")
     if rol not in ROLES:
         raise BusinessError("El rol debe ser Admin, Usuario o Contador")
+
+
+def _validate_new_user(nombre: str, email: str, rol: str, password: str) -> None:
+    """Las validaciones de crear: las de los datos y la de la contraseña inicial.
+
+    La contraseña no se limpia: los espacios de los lados cuentan como parte de ella.
+    """
+    _validate_user_fields(nombre, email, rol)
     if len(password) < MIN_LARGO_PASSWORD:
         raise BusinessError(f"La contraseña debe tener al menos {MIN_LARGO_PASSWORD} caracteres")
 
@@ -95,11 +104,14 @@ def create_user(session: Session, empresa_id: int, data: UserCreate) -> UserRead
     session.add(user)
     try:
         session.flush()  # asigna `user.id` sin confirmar, para usarlo en la fila de abajo
-    except IntegrityError:
+    except IntegrityError as error:
         # La busqueda de arriba no alcanza: dos peticiones simultaneas con el mismo correo pueden
         # pasarla las dos, y quien frena a la segunda es la restriccion `unique` de la base.
-        # Se deshace para dejar la sesion limpia y se responde igual que con la busqueda.
+        # Se deshace para dejar la sesion limpia. Solo se atrapa el duplicado (codigo 23505 de
+        # Postgres): cualquier otro rechazo es un error real y se deja subir.
         session.rollback()
+        if not isinstance(error.orig, UniqueViolation):
+            raise
         raise AlreadyExistsError("Usuario", "email", email)
 
     session.add(UserCompany(usuario_id=user.id, empresa_id=empresa_id, rol=data.rol))
@@ -144,6 +156,77 @@ def list_users(session: Session, empresa_id: int) -> list[UserRead]:
         UserRead(id=user.id, nombre=user.nombre, email=user.email, rol=rol, activo=user.activo)
         for user, rol in rows
     ]
+
+
+def _count_other_admins(session: Session, empresa_id: int, user_id: int) -> int:
+    """Cuántos usuarios con rol admin y activos tiene la empresa, sin contar a `user_id`.
+
+    Un Admin desactivado no cuenta: no puede entrar, así que no sirve para administrar.
+    """
+    return session.exec(
+        select(func.count())
+        .select_from(UserCompany)
+        .join(User, User.id == UserCompany.usuario_id)
+        .where(
+            User.activo,
+            UserCompany.empresa_id == empresa_id,
+            UserCompany.rol == "admin",
+            UserCompany.usuario_id != user_id,
+        )
+    ).one()
+
+
+def update_user(session: Session, empresa_id: int, user_id: int, data: UserUpdate) -> UserRead:
+    """Edita nombre, correo, rol y estado de un usuario de la empresa `empresa_id` y devuelve sus datos.
+
+    Busca al usuario por su fila en `usuarios_empresas`, así solo encuentra a los de esa empresa.
+    """
+    row = session.exec(
+        select(User, UserCompany)
+        .join(UserCompany, UserCompany.usuario_id == User.id)
+        .where(User.id == user_id, UserCompany.empresa_id == empresa_id)
+    ).first()
+    if not row:
+        # Un usuario de otra empresa responde igual que uno que no existe: no se revela que existe.
+        raise NotFoundError("Usuario", user_id)
+    user, link = row
+
+    # Se valida el estado final: lo que llega mezclado con lo que el usuario ya tenía.
+    nombre = data.nombre.strip() if data.nombre is not None else user.nombre
+    email = normalize_email(data.email) if data.email is not None else user.email
+    rol = data.rol if data.rol is not None else link.rol
+    _validate_user_fields(nombre, email, rol)
+    activo = data.activo if data.activo is not None else user.activo
+    # Solo frena el cambio que le quita a este usuario su condición de Admin activo (por el rol
+    # o por desactivarlo) cuando no queda otro. Editar a quien no es Admin activo no lo toca.
+    era_admin_activo = link.rol == "admin" and user.activo
+    seguira_siendo = rol == "admin" and activo
+    if era_admin_activo and not seguira_siendo and _count_other_admins(session, empresa_id, user.id) == 0:
+        raise BusinessError("La empresa debe tener al menos un Admin activo")
+    # Repetido solo si lo tiene OTRO usuario: dejar el suyo (aunque cambien las mayúsculas) no es error.
+    existing = get_user_by_email(session, email)
+    if existing and existing.id != user.id:
+        raise AlreadyExistsError("Usuario", "email", email)
+
+    user.nombre = nombre
+    user.email = email
+    link.rol = rol
+    # Desactivar solo cambia este dato: el login y la sesión ya rechazan a un usuario inactivo.
+    user.activo = activo
+    try:
+        session.commit()
+    except IntegrityError as error:
+        # La búsqueda de arriba no alcanza: dos peticiones simultáneas con el mismo correo pueden
+        # pasarla las dos, y quien frena a la segunda es la restricción `unique` de la base.
+        # Solo se atrapa el duplicado (código 23505 de Postgres): cualquier otro rechazo es un
+        # error real y se deja subir.
+        session.rollback()
+        if not isinstance(error.orig, UniqueViolation):
+            raise
+        raise AlreadyExistsError("Usuario", "email", email)
+    return UserRead(
+        id=user.id, nombre=user.nombre, email=user.email, rol=link.rol, activo=user.activo
+    )
 
 
 def reset_password(session: Session, email: str, new_password: str) -> None:

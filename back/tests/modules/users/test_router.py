@@ -270,3 +270,275 @@ def test_list_users_never_returns_password_hash(logged_in_client):
 
 def test_list_users_without_login_returns_401(client):
     assert client.get(URL).status_code == 401
+
+
+def _patch(logged_in_client, user_id, **cambios):
+    return logged_in_client.patch(
+        f"{URL}/{user_id}", json=cambios, headers=_csrf_headers(logged_in_client)
+    )
+
+
+def test_update_user_changes_name_email_and_role_and_saves_them(logged_in_client, session):
+    maria = _create(logged_in_client).json()
+
+    response = _patch(
+        logged_in_client,
+        maria["id"],
+        nombre="María Gómez",
+        email="maria.gomez@example.com",
+        rol="admin",
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": maria["id"],
+        "nombre": "María Gómez",
+        "email": "maria.gomez@example.com",
+        "rol": "admin",
+        "activo": True,
+    }
+    user = session.exec(select(User).where(User.id == maria["id"])).one()
+    link = session.exec(select(UserCompany).where(UserCompany.usuario_id == maria["id"])).one()
+    assert (user.nombre, user.email, link.rol) == ("María Gómez", "maria.gomez@example.com", "admin")
+
+
+def _login(client, email, password):
+    return client.post("/api/v1/auth/login", json={"email": email, "password": password})
+
+
+def test_update_user_with_new_email_lets_them_log_in_with_it(logged_in_client):
+    maria = _create(logged_in_client).json()
+
+    # El correo llega con mayúsculas y espacios: se guarda limpio, como al crear.
+    _patch(
+        logged_in_client,
+        maria["id"],
+        nombre="María Pérez",
+        email="  Maria.Nueva@Example.COM ",
+        rol="contador",
+    )
+
+    assert _login(logged_in_client, "maria@example.com", DATOS["password"]).status_code == 401
+    assert _login(logged_in_client, "maria.nueva@example.com", DATOS["password"]).status_code == 200
+
+
+@pytest.mark.parametrize("de_otra_empresa", [False, True])
+def test_update_user_with_email_of_another_user_returns_409_and_changes_nothing(
+    logged_in_client, session, de_otra_empresa
+):
+    maria = _create(logged_in_client).json()
+    if de_otra_empresa:
+        service.create_company_with_owner(
+            session,
+            company_name="Café Sol",
+            owner_name="Ana",
+            email="ana@cafesol.com",
+            password="clave-de-ana-123",
+        )
+    # Distintas mayúsculas a propósito: el correo no distingue entre ellas.
+    ocupado = "ANA@cafesol.com" if de_otra_empresa else "JOHAN@Example.com"
+
+    response = _patch(
+        logged_in_client, maria["id"], nombre="Otro Nombre", email=ocupado, rol="admin"
+    )
+
+    assert response.status_code == 409
+    user = session.exec(select(User).where(User.id == maria["id"])).one()
+    link = session.exec(select(UserCompany).where(UserCompany.usuario_id == maria["id"])).one()
+    assert (user.nombre, user.email, link.rol) == ("María Pérez", "maria@example.com", "contador")
+
+
+def test_update_user_when_two_requests_race_for_the_same_email_returns_409(
+    logged_in_client, session, monkeypatch
+):
+    maria = _create(logged_in_client).json()
+    # Igual que al crear: la búsqueda no encuentra al dueño del correo, así que quien frena el
+    # duplicado es la restricción `unique` de la base.
+    monkeypatch.setattr(service, "get_user_by_email", lambda session, email: None)
+
+    response = _patch(logged_in_client, maria["id"], nombre="Otro Nombre", email="johan@example.com")
+
+    assert response.status_code == 409
+    user = session.exec(select(User).where(User.id == maria["id"])).one()
+    assert (user.nombre, user.email) == ("María Pérez", "maria@example.com")
+    # La sesión sigue sirviendo después del choque: un cambio válido funciona.
+    assert _patch(logged_in_client, maria["id"], nombre="María Gómez").status_code == 200
+
+
+def test_update_user_keeping_its_own_email_is_not_an_error(logged_in_client):
+    maria = _create(logged_in_client).json()
+
+    # Mismo correo, con otras mayúsculas: sigue siendo el suyo, y cambia solo el nombre.
+    response = _patch(
+        logged_in_client,
+        maria["id"],
+        nombre="María Gómez",
+        email="MARIA@example.com",
+        rol="contador",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["nombre"] == "María Gómez"
+    assert response.json()["email"] == "maria@example.com"
+
+
+@pytest.mark.parametrize(
+    "cambios",
+    [
+        {"nombre": "   "},
+        {"email": "   "},
+        {"email": "esto-no-es-un-correo"},
+        {"rol": "superadmin"},
+    ],
+)
+def test_update_user_with_empty_field_invalid_email_or_unknown_role_returns_422_and_changes_nothing(
+    logged_in_client, session, cambios
+):
+    maria = _create(logged_in_client).json()
+    datos = {"nombre": "María Gómez", "email": "maria.gomez@example.com", "rol": "admin"}
+
+    response = _patch(logged_in_client, maria["id"], **{**datos, **cambios})
+
+    assert response.status_code == 422
+    user = session.exec(select(User).where(User.id == maria["id"])).one()
+    link = session.exec(select(UserCompany).where(UserCompany.usuario_id == maria["id"])).one()
+    assert (user.nombre, user.email, link.rol) == ("María Pérez", "maria@example.com", "contador")
+
+
+def test_update_user_sending_only_the_role_leaves_the_other_fields_untouched(
+    logged_in_client, session
+):
+    maria = _create(logged_in_client).json()
+
+    response = _patch(logged_in_client, maria["id"], rol="admin")
+
+    assert response.status_code == 200
+    assert response.json() == {**maria, "rol": "admin"}
+    user = session.exec(select(User).where(User.id == maria["id"])).one()
+    assert (user.nombre, user.email) == ("María Pérez", "maria@example.com")
+
+
+ADMIN_EMAIL = "johan@example.com"
+ADMIN_PASSWORD = "una-clave-segura"
+
+
+def test_deactivated_user_cannot_log_in_and_their_open_session_is_cut(logged_in_client):
+    maria = _create(logged_in_client).json()
+    # María abre sesión y se guardan sus cookies; después el cliente vuelve a ser el Admin.
+    _login(logged_in_client, DATOS["email"], DATOS["password"])
+    cookies_de_maria = dict(logged_in_client.cookies)
+    _login(logged_in_client, ADMIN_EMAIL, ADMIN_PASSWORD)
+
+    response = _patch(logged_in_client, maria["id"], activo=False)
+
+    assert response.status_code == 200
+    assert response.json()["activo"] is False
+    assert _login(logged_in_client, DATOS["email"], DATOS["password"]).status_code == 401
+    # La sesión que María ya tenía abierta tampoco sirve: su siguiente petición da 401.
+    logged_in_client.cookies.clear()
+    logged_in_client.cookies.update(cookies_de_maria)
+    assert logged_in_client.get(URL).status_code == 401
+
+
+def test_reactivated_user_can_log_in_again_with_the_same_password(logged_in_client):
+    maria = _create(logged_in_client).json()
+    _patch(logged_in_client, maria["id"], activo=False)
+    assert _login(logged_in_client, DATOS["email"], DATOS["password"]).status_code == 401
+    _login(logged_in_client, ADMIN_EMAIL, ADMIN_PASSWORD)
+
+    response = _patch(logged_in_client, maria["id"], activo=True)
+
+    assert response.status_code == 200
+    assert response.json()["activo"] is True
+    assert _login(logged_in_client, DATOS["email"], DATOS["password"]).status_code == 200
+
+
+def _admin_id(session):
+    return session.exec(select(User.id).where(User.email == ADMIN_EMAIL)).one()
+
+
+def test_update_user_cannot_remove_admin_role_from_the_only_active_admin(
+    logged_in_client, session
+):
+    admin_id = _admin_id(session)
+
+    response = _patch(logged_in_client, admin_id, rol="usuario")
+
+    assert response.status_code == 422
+    assert "al menos un Admin activo" in response.json()["message"]
+    link = session.exec(select(UserCompany).where(UserCompany.usuario_id == admin_id)).one()
+    assert link.rol == "admin"
+
+
+def test_update_user_can_demote_an_admin_when_another_active_admin_exists(
+    logged_in_client, session
+):
+    _create(logged_in_client, rol="admin")
+
+    response = _patch(logged_in_client, _admin_id(session), rol="usuario")
+
+    assert response.status_code == 200
+    assert response.json()["rol"] == "usuario"
+
+
+def test_an_inactive_admin_does_not_count_as_the_remaining_admin(logged_in_client, session):
+    otro = _create(logged_in_client, rol="admin").json()
+    # El otro Admin queda inactivo (directo en la base): ya no puede entrar, así que no cuenta.
+    otro_user = session.get(User, otro["id"])
+    otro_user.activo = False
+    session.add(otro_user)
+    session.commit()
+
+    response = _patch(logged_in_client, _admin_id(session), rol="usuario")
+
+    assert response.status_code == 422
+    assert "al menos un Admin activo" in response.json()["message"]
+
+
+def test_update_user_cannot_deactivate_the_only_active_admin(logged_in_client, session):
+    admin_id = _admin_id(session)
+
+    response = _patch(logged_in_client, admin_id, activo=False)
+
+    assert response.status_code == 422
+    assert "al menos un Admin activo" in response.json()["message"]
+    assert session.get(User, admin_id).activo is True
+
+
+def test_update_user_from_another_company_returns_404_and_changes_nothing(
+    logged_in_client, session
+):
+    service.create_company_with_owner(
+        session,
+        company_name="Café Sol",
+        owner_name="Ana",
+        email="ana@cafesol.com",
+        password="clave-de-ana-123",
+    )
+    ana = session.exec(select(User).where(User.email == "ana@cafesol.com")).one()
+
+    response = _patch(logged_in_client, ana.id, nombre="Hackeada", rol="usuario", activo=False)
+
+    assert response.status_code == 404
+    session.refresh(ana)
+    link = session.exec(select(UserCompany).where(UserCompany.usuario_id == ana.id)).one()
+    assert (ana.nombre, ana.activo, link.rol) == ("Ana", True, "admin")
+
+
+def test_admin_can_edit_their_own_data(logged_in_client, session):
+    admin_id = _admin_id(session)
+
+    response = _patch(logged_in_client, admin_id, nombre="Johan Pardo", email="johan.pardo@example.com")
+
+    assert response.status_code == 200
+    assert response.json()["nombre"] == "Johan Pardo"
+    assert response.json()["rol"] == "admin"
+    # Su sesión sigue valiendo (va por id, no por correo) y entra con el correo nuevo.
+    assert logged_in_client.get(URL).status_code == 200
+    assert _login(logged_in_client, "johan.pardo@example.com", ADMIN_PASSWORD).status_code == 200
+
+
+def test_update_user_without_login_returns_401(client):
+    response = client.patch(f"{URL}/1", json={"nombre": "Nadie"})
+
+    assert response.status_code == 401
