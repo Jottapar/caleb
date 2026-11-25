@@ -1,10 +1,10 @@
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import DateTime, Numeric
-from sqlmodel import Field, SQLModel
+from sqlalchemy import Numeric
+from sqlmodel import Field
 
-from app.core.mixins import AuditMixin, utc_now
+from app.core.mixins import AuditMixin
 
 
 class Receipt(AuditMixin, table=True):
@@ -61,7 +61,7 @@ class ReceiptSheetLine(AuditMixin, table=True):
     total_linea: Decimal = Field(sa_type=Numeric(14, 2))
 
 
-class AccountReceivablePayment(SQLModel, table=True):
+class AccountReceivablePayment(AuditMixin, table=True):
     """Un abono a un recibo. La deuda no se guarda: es `recibos.total` menos la suma de estos."""
 
     __tablename__ = "pagos_cuentas_por_cobrar"
@@ -74,4 +74,3 @@ class AccountReceivablePayment(SQLModel, table=True):
     # Valores validos (los valida el backend): activo, anulado
     estado: str = Field(max_length=20, default="activo")
     nota: str = Field(max_length=255, default="")
-    created_at: datetime = Field(default_factory=utc_now, sa_type=DateTime(timezone=True))

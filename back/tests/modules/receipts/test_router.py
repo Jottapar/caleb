@@ -957,3 +957,88 @@ def test_cancelling_a_credit_receipt_saves_the_canceller_as_updated_by(
     assert recibo.created_by_id == johan
     assert recibo.updated_by_id == maria
     assert recibo.updated_at > recibo.created_at
+
+
+def _payment_rows(session, receipt_id: int) -> list[AccountReceivablePayment]:
+    return list(
+        session.exec(
+            select(AccountReceivablePayment)
+            .where(AccountReceivablePayment.recibo_id == receipt_id)
+            .order_by(AccountReceivablePayment.id)
+        ).all()
+    )
+
+
+def _cash_receipt(logged_in_client, session) -> dict:
+    cliente_id = _create_cliente(logged_in_client)
+    item = _create_item(logged_in_client, session, cantidad_inicial="10")
+    response = _post_receipt(
+        logged_in_client, cliente_id, lineas=[{"item_id": item["id"], "cantidad": "2"}]
+    )
+    assert response.status_code == 201, response.json()
+    return response.json()
+
+
+def test_creating_a_cash_receipt_saves_the_user_as_author_of_its_payment(logged_in_client, session):
+    creado = _cash_receipt(logged_in_client, session)
+
+    johan = session.exec(select(User.id).where(User.email == EMAIL)).one()
+    pagos = _payment_rows(session, creado["id"])
+    assert len(pagos) == 1
+    assert pagos[0].created_by_id == johan
+    assert pagos[0].updated_by_id == johan
+    assert pagos[0].created_at == pagos[0].updated_at
+
+
+def test_cancelling_a_cash_receipt_saves_the_canceller_as_updated_by_of_its_payment(
+    logged_in_client, session, log_in_as_other_admin
+):
+    creado = _cash_receipt(logged_in_client, session)
+    johan = session.exec(select(User.id).where(User.email == EMAIL)).one()
+    maria = log_in_as_other_admin(logged_in_client)
+
+    response = logged_in_client.post(
+        f"{URL}/{creado['id']}/cancel", headers=_csrf_headers(logged_in_client)
+    )
+
+    assert response.status_code == 200
+    pagos = _payment_rows(session, creado["id"])
+    assert len(pagos) == 1
+    assert pagos[0].estado == "anulado"
+    assert pagos[0].created_by_id == johan
+    assert pagos[0].updated_by_id == maria
+    assert pagos[0].updated_at > pagos[0].created_at
+
+
+def test_cancelling_a_credit_receipt_saves_the_canceller_as_updated_by_of_every_payment(
+    logged_in_client, session, log_in_as_other_admin
+):
+    recibo = _credit_receipt(logged_in_client, session)
+    empresa_id = session.exec(select(Company)).first().id
+    johan = session.exec(select(User.id).where(User.email == EMAIL)).one()
+    # Todavía no hay abonos en la API (historia 6): se crean directo, con la sesión de Johan.
+    for monto in ("5000", "2000"):
+        session.add(
+            AccountReceivablePayment(
+                empresa_id=empresa_id,
+                recibo_id=recibo["id"],
+                monto=Decimal(monto),
+                fecha=date.today(),
+            )
+        )
+    # Con el commit termina su creación: lo que venga después ya es editar.
+    session.commit()
+    maria = log_in_as_other_admin(logged_in_client)
+
+    response = logged_in_client.post(
+        f"{URL}/{recibo['id']}/cancel", headers=_csrf_headers(logged_in_client)
+    )
+
+    assert response.status_code == 200
+    pagos = _payment_rows(session, recibo["id"])
+    assert len(pagos) == 2
+    for pago in pagos:
+        assert pago.estado == "anulado"
+        assert pago.created_by_id == johan
+        assert pago.updated_by_id == maria
+        assert pago.updated_at > pago.created_at
