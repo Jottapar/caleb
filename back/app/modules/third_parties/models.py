@@ -1,12 +1,14 @@
 from typing import TYPE_CHECKING
 
-from sqlmodel import Field, Relationship, SQLModel
+from sqlmodel import Field, Relationship
+
+from app.core.mixins import AuditMixin
 
 if TYPE_CHECKING:
     from app.modules.banks.models import Bank
 
 
-class ThirdParty(SQLModel, table=True):
+class ThirdParty(AuditMixin, table=True):
     """Un cliente o proveedor de una empresa. `tipo` lo valida el servicio, no hay enum."""
 
     __tablename__ = "terceros"
@@ -35,7 +37,7 @@ class ThirdParty(SQLModel, table=True):
         return self.cuentas_bancarias[0] if self.cuentas_bancarias else None
 
 
-class ThirdPartyBankAccount(SQLModel, table=True):
+class ThirdPartyBankAccount(AuditMixin, table=True):
     """Datos bancarios de un tercero. Tabla aparte para que ninguna columna quede vacia:
     un tercero sin cuenta simplemente no tiene fila aqui."""
 

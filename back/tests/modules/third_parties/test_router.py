@@ -1,10 +1,13 @@
 import pytest
+from sqlmodel import select
 
 from app.modules.banks.models import Bank
 from app.modules.companies.models import Company
 from app.modules.third_parties import service as third_parties_service
-from app.modules.third_parties.models import ThirdParty
+from app.modules.third_parties.models import ThirdParty, ThirdPartyBankAccount
 from app.modules.third_parties.schemas import ThirdPartyCreate
+from app.modules.users.models import User
+from tests.modules.third_parties.conftest import EMAIL
 
 URL = "/api/v1/third-parties"
 
@@ -549,3 +552,121 @@ def test_delete_third_party_from_other_company_returns_404(logged_in_client, ses
     response = logged_in_client.delete(f"{URL}/{ajeno_id}", headers=_csrf_headers(logged_in_client))
 
     assert response.status_code == 404
+
+
+CUENTA = {"tipo_cuenta": "ahorros", "numero_cuenta": "0123456789"}
+
+
+def _user_id(session, email: str) -> int:
+    return session.exec(select(User.id).where(User.email == email)).one()
+
+
+def _log_in_as_other_admin(logged_in_client) -> int:
+    """Johan crea a María (Admin) y la sesión del cliente pasa a ser la de ella. Devuelve su id."""
+    maria = logged_in_client.post(
+        "/api/v1/users",
+        json={
+            "nombre": "María Admin",
+            "email": "maria@example.com",
+            "rol": "admin",
+            "password": "clave-de-maria",
+        },
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+    logged_in_client.post(
+        "/api/v1/auth/login", json={"email": "maria@example.com", "password": "clave-de-maria"}
+    )
+    return maria["id"]
+
+
+def _third_party_row(session, third_party_id: int) -> ThirdParty:
+    return session.exec(select(ThirdParty).where(ThirdParty.id == third_party_id)).one()
+
+
+def _account_rows(session, third_party_id: int) -> list[ThirdPartyBankAccount]:
+    return list(
+        session.exec(
+            select(ThirdPartyBankAccount).where(ThirdPartyBankAccount.tercero_id == third_party_id)
+        ).all()
+    )
+
+
+def test_creating_a_third_party_saves_the_user_as_author_of_the_third_party_and_its_bank_account(
+    logged_in_client, session, bank
+):
+    creado = _create(logged_in_client, cuenta_bancaria={"banco_id": bank.id, **CUENTA})
+
+    johan = _user_id(session, EMAIL)
+    filas = [_third_party_row(session, creado["id"]), *_account_rows(session, creado["id"])]
+    assert len(filas) == 2
+    for fila in filas:
+        assert fila.created_by_id == johan
+        assert fila.updated_by_id == johan
+        assert fila.created_at == fila.updated_at
+
+
+def test_editing_a_third_party_saves_the_editor_as_updated_by_and_keeps_the_creator(
+    logged_in_client, session
+):
+    creado = _create(logged_in_client)
+    johan = _user_id(session, EMAIL)
+    maria = _log_in_as_other_admin(logged_in_client)
+
+    response = logged_in_client.patch(
+        f"{URL}/{creado['id']}",
+        json={"nombre": "Carlos Gómez"},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 200
+    fila = _third_party_row(session, creado["id"])
+    assert fila.created_by_id == johan
+    assert fila.updated_by_id == maria
+    assert fila.updated_at > fila.created_at
+
+
+def test_changing_only_the_bank_account_counts_as_editing_the_third_party(
+    logged_in_client, session, bank
+):
+    creado = _create(logged_in_client, cuenta_bancaria={"banco_id": bank.id, **CUENTA})
+    johan = _user_id(session, EMAIL)
+    maria = _log_in_as_other_admin(logged_in_client)
+
+    # Solo viene la cuenta: ningún dato del tercero cambia.
+    response = logged_in_client.patch(
+        f"{URL}/{creado['id']}",
+        json={"cuenta_bancaria": {"banco_id": bank.id, "tipo_cuenta": "corriente", "numero_cuenta": "999"}},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 200
+    fila = _third_party_row(session, creado["id"])
+    assert fila.created_by_id == johan
+    assert fila.updated_by_id == maria
+    assert fila.updated_at > fila.created_at
+    # La cuenta vieja se reemplazó: la nueva es una fila nueva, creada por quien hizo el cambio.
+    cuentas = _account_rows(session, creado["id"])
+    assert [cuenta.numero_cuenta for cuenta in cuentas] == ["999"]
+    assert cuentas[0].created_by_id == maria
+    assert cuentas[0].updated_by_id == maria
+
+
+def test_removing_the_bank_account_counts_as_editing_the_third_party(
+    logged_in_client, session, bank
+):
+    creado = _create(logged_in_client, cuenta_bancaria={"banco_id": bank.id, **CUENTA})
+    johan = _user_id(session, EMAIL)
+    maria = _log_in_as_other_admin(logged_in_client)
+
+    response = logged_in_client.patch(
+        f"{URL}/{creado['id']}",
+        json={"cuenta_bancaria": None},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 200
+    fila = _third_party_row(session, creado["id"])
+    assert fila.created_by_id == johan
+    assert fila.updated_by_id == maria
+    assert fila.updated_at > fila.created_at
+    assert _account_rows(session, creado["id"]) == []
