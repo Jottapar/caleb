@@ -89,16 +89,13 @@ def test_creating_a_user_saves_the_admin_as_author_of_the_user_and_the_link(
 
 
 def test_editing_a_user_saves_the_editor_as_updated_by_and_keeps_the_creator(
-    logged_in_client, session
+    logged_in_client, session, log_in_as_other_admin
 ):
     johan = _admin_id(session)
-    maria = _create(
-        logged_in_client, nombre="María Admin", email="maria.admin@example.com", rol="admin"
-    ).json()
     pedro = _create(logged_in_client, nombre="Pedro", email="pedro@example.com").json()
 
     # María entra y edita a Pedro: ella es quien lo edita, Johan sigue siendo quien lo creó.
-    _login(logged_in_client, "maria.admin@example.com", DATOS["password"])
+    maria = log_in_as_other_admin(logged_in_client)
     response = _patch(logged_in_client, pedro["id"], nombre="Pedro Gómez", rol="usuario")
 
     assert response.status_code == 200
@@ -106,7 +103,7 @@ def test_editing_a_user_saves_the_editor_as_updated_by_and_keeps_the_creator(
     link = session.exec(select(UserCompany).where(UserCompany.usuario_id == pedro["id"])).one()
     for fila in (user, link):
         assert fila.created_by_id == johan
-        assert fila.updated_by_id == maria["id"]
+        assert fila.updated_by_id == maria
         assert fila.updated_at > fila.created_at
 
 

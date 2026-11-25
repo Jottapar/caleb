@@ -561,24 +561,6 @@ def _user_id(session, email: str) -> int:
     return session.exec(select(User.id).where(User.email == email)).one()
 
 
-def _log_in_as_other_admin(logged_in_client) -> int:
-    """Johan crea a María (Admin) y la sesión del cliente pasa a ser la de ella. Devuelve su id."""
-    maria = logged_in_client.post(
-        "/api/v1/users",
-        json={
-            "nombre": "María Admin",
-            "email": "maria@example.com",
-            "rol": "admin",
-            "password": "clave-de-maria",
-        },
-        headers=_csrf_headers(logged_in_client),
-    ).json()
-    logged_in_client.post(
-        "/api/v1/auth/login", json={"email": "maria@example.com", "password": "clave-de-maria"}
-    )
-    return maria["id"]
-
-
 def _third_party_row(session, third_party_id: int) -> ThirdParty:
     return session.exec(select(ThirdParty).where(ThirdParty.id == third_party_id)).one()
 
@@ -606,11 +588,11 @@ def test_creating_a_third_party_saves_the_user_as_author_of_the_third_party_and_
 
 
 def test_editing_a_third_party_saves_the_editor_as_updated_by_and_keeps_the_creator(
-    logged_in_client, session
+    logged_in_client, session, log_in_as_other_admin
 ):
     creado = _create(logged_in_client)
     johan = _user_id(session, EMAIL)
-    maria = _log_in_as_other_admin(logged_in_client)
+    maria = log_in_as_other_admin(logged_in_client)
 
     response = logged_in_client.patch(
         f"{URL}/{creado['id']}",
@@ -626,11 +608,11 @@ def test_editing_a_third_party_saves_the_editor_as_updated_by_and_keeps_the_crea
 
 
 def test_changing_only_the_bank_account_counts_as_editing_the_third_party(
-    logged_in_client, session, bank
+    logged_in_client, session, bank, log_in_as_other_admin
 ):
     creado = _create(logged_in_client, cuenta_bancaria={"banco_id": bank.id, **CUENTA})
     johan = _user_id(session, EMAIL)
-    maria = _log_in_as_other_admin(logged_in_client)
+    maria = log_in_as_other_admin(logged_in_client)
 
     # Solo viene la cuenta: ningún dato del tercero cambia.
     response = logged_in_client.patch(
@@ -652,11 +634,11 @@ def test_changing_only_the_bank_account_counts_as_editing_the_third_party(
 
 
 def test_removing_the_bank_account_counts_as_editing_the_third_party(
-    logged_in_client, session, bank
+    logged_in_client, session, bank, log_in_as_other_admin
 ):
     creado = _create(logged_in_client, cuenta_bancaria={"banco_id": bank.id, **CUENTA})
     johan = _user_id(session, EMAIL)
-    maria = _log_in_as_other_admin(logged_in_client)
+    maria = log_in_as_other_admin(logged_in_client)
 
     response = logged_in_client.patch(
         f"{URL}/{creado['id']}",

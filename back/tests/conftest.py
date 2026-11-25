@@ -69,3 +69,31 @@ def client(session, connection, monkeypatch):
             yield test_client
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def log_in_as_other_admin():
+    """Devuelve una función que, dado el cliente de un Admin ya logueado, crea a María (otra Admin)
+    y deja la sesión del cliente como la de ella. La función devuelve el id de María.
+
+    Sirve para probar quién queda como autor de una edición: el creador es el primer Admin y el
+    editor es María.
+    """
+
+    def entrar(client) -> int:
+        maria = client.post(
+            "/api/v1/users",
+            json={
+                "nombre": "María Admin",
+                "email": "maria@example.com",
+                "rol": "admin",
+                "password": "clave-de-maria",
+            },
+            headers={"X-CSRF-TOKEN": client.cookies.get("csrf_access_token")},
+        ).json()
+        client.post(
+            "/api/v1/auth/login", json={"email": "maria@example.com", "password": "clave-de-maria"}
+        )
+        return maria["id"]
+
+    return entrar

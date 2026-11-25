@@ -692,24 +692,6 @@ def _user_id(session, email: str) -> int:
     return session.exec(select(User.id).where(User.email == email)).one()
 
 
-def _log_in_as_other_admin(logged_in_client) -> int:
-    """Johan crea a María (Admin) y la sesión del cliente pasa a ser la de ella. Devuelve su id."""
-    maria = logged_in_client.post(
-        "/api/v1/users",
-        json={
-            "nombre": "María Admin",
-            "email": "maria@example.com",
-            "rol": "admin",
-            "password": "clave-de-maria",
-        },
-        headers=_csrf_headers(logged_in_client),
-    ).json()
-    logged_in_client.post(
-        "/api/v1/auth/login", json={"email": "maria@example.com", "password": "clave-de-maria"}
-    )
-    return maria["id"]
-
-
 def _item_row(session, item_id: int) -> Item:
     return session.exec(select(Item).where(Item.id == item_id)).one()
 
@@ -735,11 +717,11 @@ def test_creating_a_product_saves_the_user_as_author(logged_in_client, session):
 
 
 def test_editing_a_product_saves_the_editor_as_updated_by_and_keeps_the_creator(
-    logged_in_client, session
+    logged_in_client, session, log_in_as_other_admin
 ):
     creado = _create_item(logged_in_client, session)
     johan = _user_id(session, EMAIL)
-    maria = _log_in_as_other_admin(logged_in_client)
+    maria = log_in_as_other_admin(logged_in_client)
 
     response = logged_in_client.patch(
         f"{URL}/{creado['id']}",
@@ -768,11 +750,11 @@ def test_creating_a_product_with_initial_quantity_saves_the_user_as_author_of_th
 
 
 def test_adding_stock_saves_the_user_as_author_of_the_new_movement_and_leaves_the_product_untouched(
-    logged_in_client, session
+    logged_in_client, session, log_in_as_other_admin
 ):
     creado = _create_item(logged_in_client, session, cantidad_inicial="5")
     johan = _user_id(session, EMAIL)
-    maria = _log_in_as_other_admin(logged_in_client)
+    maria = log_in_as_other_admin(logged_in_client)
 
     response = logged_in_client.post(
         f"{URL}/{creado['id']}/stock-movements",

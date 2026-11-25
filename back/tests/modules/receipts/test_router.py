@@ -840,25 +840,13 @@ def test_cancel_credit_receipt_cancels_every_payment(logged_in_client, session):
 
 
 def test_a_receipt_and_its_cancellation_save_each_user_as_author_of_the_stock_movements(
-    logged_in_client, session
+    logged_in_client, session, log_in_as_other_admin
 ):
     cliente_id = _create_cliente(logged_in_client)
     item = _create_item(logged_in_client, session, cantidad_inicial="10")
     johan = session.exec(select(User.id).where(User.email == EMAIL)).one()
     # Johan crea a María (Admin) y la sesión pasa a ser la de ella: ella hace la venta.
-    maria = logged_in_client.post(
-        "/api/v1/users",
-        json={
-            "nombre": "María Admin",
-            "email": "maria@example.com",
-            "rol": "admin",
-            "password": "clave-de-maria",
-        },
-        headers=_csrf_headers(logged_in_client),
-    ).json()["id"]
-    logged_in_client.post(
-        "/api/v1/auth/login", json={"email": "maria@example.com", "password": "clave-de-maria"}
-    )
+    maria = log_in_as_other_admin(logged_in_client)
     recibo = logged_in_client.post(
         URL,
         json={"tercero_id": cliente_id, "lineas": [{"item_id": item["id"], "cantidad": "3"}]},
