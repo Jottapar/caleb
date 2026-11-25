@@ -165,3 +165,76 @@ def test_created_user_can_log_in_and_sees_my_company(logged_in_client):
     assert login.status_code == 200
     assert empresa.status_code == 200
     assert empresa.json()["nombre"] == "Panadería Luna"
+
+
+def test_list_users_returns_users_of_my_company_with_name_email_role_and_active(logged_in_client):
+    _create(logged_in_client)
+
+    response = logged_in_client.get(URL)
+
+    assert response.status_code == 200
+    por_correo = {usuario["email"]: usuario for usuario in response.json()}
+    assert set(por_correo) == {"johan@example.com", "maria@example.com"}
+    assert por_correo["maria@example.com"]["nombre"] == "María Pérez"
+    assert por_correo["maria@example.com"]["rol"] == "contador"
+    assert por_correo["maria@example.com"]["activo"] is True
+    assert por_correo["johan@example.com"]["rol"] == "admin"
+
+
+def test_list_users_orders_by_name_ascending(logged_in_client):
+    # Mayúsculas y tildes mezcladas a propósito: el orden es el de una lista de nombres a ojo.
+    for nombre, email in [
+        ("Zoe", "zoe@example.com"),
+        ("ana", "ana@example.com"),
+        ("Beto", "beto@example.com"),
+        ("Álvaro", "alvaro@example.com"),
+    ]:
+        _create(logged_in_client, nombre=nombre, email=email)
+
+    nombres = [usuario["nombre"] for usuario in logged_in_client.get(URL).json()]
+
+    # El admin del fixture se llama «Johan».
+    assert nombres == ["Álvaro", "ana", "Beto", "Johan", "Zoe"]
+
+
+def test_list_users_does_not_include_users_from_other_companies(logged_in_client, session):
+    service.create_company_with_owner(
+        session,
+        company_name="Café Sol",
+        owner_name="Ana",
+        email="ana@cafesol.com",
+        password="clave-de-ana-123",
+    )
+    _create(logged_in_client)
+
+    correos = {usuario["email"] for usuario in logged_in_client.get(URL).json()}
+
+    assert correos == {"johan@example.com", "maria@example.com"}
+
+
+def test_list_users_includes_inactive_users(logged_in_client, session):
+    _create(logged_in_client)
+    maria = session.exec(select(User).where(User.email == "maria@example.com")).one()
+    maria.activo = False
+    session.add(maria)
+    session.commit()
+
+    por_correo = {usuario["email"]: usuario for usuario in logged_in_client.get(URL).json()}
+
+    assert por_correo["maria@example.com"]["activo"] is False
+    assert por_correo["johan@example.com"]["activo"] is True
+
+
+def test_list_users_never_returns_password_hash(logged_in_client):
+    _create(logged_in_client)
+
+    usuarios = logged_in_client.get(URL).json()
+
+    assert len(usuarios) == 2
+    for usuario in usuarios:
+        assert "password_hash" not in usuario
+        assert "password" not in usuario
+
+
+def test_list_users_without_login_returns_401(client):
+    assert client.get(URL).status_code == 401

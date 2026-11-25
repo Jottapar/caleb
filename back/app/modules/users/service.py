@@ -107,6 +107,23 @@ def create_user(session: Session, empresa_id: int, data: UserCreate) -> UserRead
     )
 
 
+def list_users(session: Session, empresa_id: int) -> list[UserRead]:
+    """Todos los usuarios de la empresa `empresa_id`, activos e inactivos, con su rol en ella.
+
+    El rol sale de `usuarios_empresas`, filtrado por la empresa. Nunca incluye el hash.
+    """
+    rows = session.exec(
+        select(User, UserCompany.rol)
+        .join(UserCompany, UserCompany.usuario_id == User.id)
+        .where(UserCompany.empresa_id == empresa_id)
+        .order_by(User.nombre)
+    ).all()
+    return [
+        UserRead(id=user.id, nombre=user.nombre, email=user.email, rol=rol, activo=user.activo)
+        for user, rol in rows
+    ]
+
+
 def reset_password(session: Session, email: str, new_password: str) -> None:
     """Le pone una password nueva a un usuario. Lo usa el comando de consola."""
     user = get_user_by_email(session, email)

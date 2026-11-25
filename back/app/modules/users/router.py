@@ -13,6 +13,12 @@ router = APIRouter(
 )
 
 
+@router.get("", response_model=list[UserRead])
+def list_users(session: SessionDep, empresa_id: CurrentCompanyId):
+    # Solo los de la empresa de quien consulta; no hay forma de pedir los de otra.
+    return service.list_users(session, empresa_id)
+
+
 @router.post("", response_model=UserRead, status_code=201)
 def create_user(data: UserCreate, session: SessionDep, empresa_id: CurrentCompanyId):
     # La empresa sale de la sesion de quien crea, nunca del cuerpo de la peticion.
