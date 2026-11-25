@@ -16,6 +16,8 @@ from app.modules.users.models import User
 SYSTEM_USER_EMAIL = "caleb@caleb.com"
 # Clave de `session.info` donde la peticion deja el id de su usuario (la pone `get_current_user`).
 ACTOR_KEY = "actor_id"
+# Clave de `session.info` donde se guarda el id de Caleb tras buscarlo, para no repetir la consulta.
+SYSTEM_USER_KEY = "system_user_id"
 
 
 def _author_id(session: Session) -> int:
@@ -23,7 +25,11 @@ def _author_id(session: Session) -> int:
     actor_id = session.info.get(ACTOR_KEY)
     if actor_id is not None:
         return actor_id
-    return session.execute(select(User.id).where(User.email == SYSTEM_USER_EMAIL)).scalar_one()
+    if SYSTEM_USER_KEY not in session.info:
+        session.info[SYSTEM_USER_KEY] = session.execute(
+            select(User.id).where(User.email == SYSTEM_USER_EMAIL)
+        ).scalar_one()
+    return session.info[SYSTEM_USER_KEY]
 
 
 @event.listens_for(Session, "before_flush")

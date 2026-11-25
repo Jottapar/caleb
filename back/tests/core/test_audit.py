@@ -1,3 +1,4 @@
+from sqlalchemy import event
 from sqlmodel import select
 
 from app.modules.banks.models import Bank
@@ -84,3 +85,24 @@ def test_user_and_company_link_created_without_a_request_have_caleb_as_author(se
         assert row.created_by_id == caleb
         assert row.updated_by_id == caleb
         assert row.created_at == row.updated_at
+
+
+def test_rows_created_without_a_request_look_up_caleb_only_once_per_session(session):
+    consultas = []
+
+    def contar(conn, cursor, statement, parameters, context, executemany):
+        if "FROM usuarios" in statement and "usuarios.email" in statement:
+            consultas.append(statement)
+
+    conexion = session.get_bind()
+    event.listen(conexion, "before_cursor_execute", contar)
+    try:
+        # Tres empresas en un guardado y otra en un segundo guardado, todas sin petición.
+        session.add_all([Company(nombre=f"Empresa {numero}") for numero in range(3)])
+        session.flush()
+        session.add(Company(nombre="Empresa 4"))
+        session.flush()
+    finally:
+        event.remove(conexion, "before_cursor_execute", contar)
+
+    assert len(consultas) == 1
