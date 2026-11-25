@@ -1,3 +1,5 @@
+import unicodedata
+
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
@@ -107,6 +109,24 @@ def create_user(session: Session, empresa_id: int, data: UserCreate) -> UserRead
     )
 
 
+def _name_sort_key(nombre: str) -> str:
+    """La clave para ordenar nombres alfabéticamente: sin mayúsculas ni tildes, con la Ñ después de la N.
+
+    `Álvaro` -> `alvaro`, `Ñandú` -> `n{andu`. La Ñ se vuelve «n» + «{» (el carácter que va justo
+    después de la «z»), así queda entre «nz…» y «o…», como en el abecedario español.
+    """
+    clave = ""
+    for letra in nombre.casefold():
+        if letra == "ñ":
+            clave += "n{"
+        else:
+            # NFD separa la letra de su tilde (á -> a + ´) y se descartan las tildes sueltas.
+            clave += "".join(
+                c for c in unicodedata.normalize("NFD", letra) if not unicodedata.combining(c)
+            )
+    return clave
+
+
 def list_users(session: Session, empresa_id: int) -> list[UserRead]:
     """Todos los usuarios de la empresa `empresa_id`, activos e inactivos, con su rol en ella.
 
@@ -116,8 +136,10 @@ def list_users(session: Session, empresa_id: int) -> list[UserRead]:
         select(User, UserCompany.rol)
         .join(UserCompany, UserCompany.usuario_id == User.id)
         .where(UserCompany.empresa_id == empresa_id)
-        .order_by(User.nombre)
     ).all()
+    # El orden se hace aquí y no con ORDER BY: en SQL lo decide la collation de la base, que
+    # cambia de un Postgres a otro (en Neon, «C.UTF-8», las tildes y mayúsculas quedan mal).
+    rows = sorted(rows, key=lambda row: (_name_sort_key(row[0].nombre), row[0].id))
     return [
         UserRead(id=user.id, nombre=user.nombre, email=user.email, rol=rol, activo=user.activo)
         for user, rol in rows

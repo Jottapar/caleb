@@ -197,6 +197,38 @@ def test_list_users_orders_by_name_ascending(logged_in_client):
     assert nombres == ["Álvaro", "ana", "Beto", "Johan", "Zoe"]
 
 
+def test_list_users_orders_alphabetically_ignoring_accents_in_the_middle_of_the_name(
+    logged_in_client,
+):
+    # Con la tilde en la primera letra y con ella cambiando el desempate entre «Alberto» y «Álvaro».
+    for nombre, email in [
+        ("Ana", "ana@example.com"),
+        ("Álvaro", "alvaro@example.com"),
+        ("Alberto", "alberto@example.com"),
+        ("Éric", "eric@example.com"),
+        ("Elena", "elena@example.com"),
+    ]:
+        _create(logged_in_client, nombre=nombre, email=email)
+
+    nombres = [usuario["nombre"] for usuario in logged_in_client.get(URL).json()]
+
+    assert nombres == ["Alberto", "Álvaro", "Ana", "Elena", "Éric", "Johan"]
+
+
+def test_list_users_orders_n_with_tilde_after_n_and_before_o(logged_in_client):
+    # En el abecedario español la Ñ va entre la N y la O.
+    for nombre, email in [
+        ("Olga", "olga@example.com"),
+        ("Ñandú", "nandu@example.com"),
+        ("Nora", "nora@example.com"),
+    ]:
+        _create(logged_in_client, nombre=nombre, email=email)
+
+    nombres = [usuario["nombre"] for usuario in logged_in_client.get(URL).json()]
+
+    assert nombres == ["Johan", "Nora", "Ñandú", "Olga"]
+
+
 def test_list_users_does_not_include_users_from_other_companies(logged_in_client, session):
     service.create_company_with_owner(
         session,
