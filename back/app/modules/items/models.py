@@ -4,10 +4,10 @@ from decimal import Decimal
 from sqlalchemy import DateTime, Numeric
 from sqlmodel import Field, SQLModel
 
-from app.core.mixins import utc_now
+from app.core.mixins import AuditMixin, utc_now
 
 
-class Item(SQLModel, table=True):
+class Item(AuditMixin, table=True):
     """Un producto del inventario de una empresa. `se_vende`/`es_insumo` los valida el servicio."""
 
     __tablename__ = "items"
@@ -25,7 +25,7 @@ class Item(SQLModel, table=True):
     activo: bool = Field(default=True)
 
 
-class InventoryMovement(SQLModel, table=True):
+class InventoryMovement(AuditMixin, table=True):
     """Una entrada o salida de un item. El stock no se guarda: se calcula sumando estas filas."""
 
     __tablename__ = "movimientos_inventario"

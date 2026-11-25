@@ -2,7 +2,10 @@ from sqlmodel import select
 
 from app.modules.companies.models import Company
 from app.modules.items import service as items_service
+from app.modules.items.models import InventoryMovement, Item
 from app.modules.taxes.models import Tax
+from app.modules.users.models import User
+from tests.modules.items.conftest import EMAIL
 
 URL = "/api/v1/items"
 
@@ -676,3 +679,114 @@ def test_item_gets_movements_after_adding_stock(logged_in_client, session):
     ).json()
 
     assert actualizado["tiene_movimientos"] is True
+
+
+def _create_item(logged_in_client, session, **overrides) -> dict:
+    payload = {"nombre": "Harina", "impuesto_id": _sin_impuesto_id(session), **overrides}
+    response = logged_in_client.post(URL, json=payload, headers=_csrf_headers(logged_in_client))
+    assert response.status_code == 201, response.json()
+    return response.json()
+
+
+def _user_id(session, email: str) -> int:
+    return session.exec(select(User.id).where(User.email == email)).one()
+
+
+def _log_in_as_other_admin(logged_in_client) -> int:
+    """Johan crea a María (Admin) y la sesión del cliente pasa a ser la de ella. Devuelve su id."""
+    maria = logged_in_client.post(
+        "/api/v1/users",
+        json={
+            "nombre": "María Admin",
+            "email": "maria@example.com",
+            "rol": "admin",
+            "password": "clave-de-maria",
+        },
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+    logged_in_client.post(
+        "/api/v1/auth/login", json={"email": "maria@example.com", "password": "clave-de-maria"}
+    )
+    return maria["id"]
+
+
+def _item_row(session, item_id: int) -> Item:
+    return session.exec(select(Item).where(Item.id == item_id)).one()
+
+
+def _movement_rows(session, item_id: int) -> list[InventoryMovement]:
+    return list(
+        session.exec(
+            select(InventoryMovement)
+            .where(InventoryMovement.item_id == item_id)
+            .order_by(InventoryMovement.id)
+        ).all()
+    )
+
+
+def test_creating_a_product_saves_the_user_as_author(logged_in_client, session):
+    creado = _create_item(logged_in_client, session)
+
+    johan = _user_id(session, EMAIL)
+    fila = _item_row(session, creado["id"])
+    assert fila.created_by_id == johan
+    assert fila.updated_by_id == johan
+    assert fila.created_at == fila.updated_at
+
+
+def test_editing_a_product_saves_the_editor_as_updated_by_and_keeps_the_creator(
+    logged_in_client, session
+):
+    creado = _create_item(logged_in_client, session)
+    johan = _user_id(session, EMAIL)
+    maria = _log_in_as_other_admin(logged_in_client)
+
+    response = logged_in_client.patch(
+        f"{URL}/{creado['id']}",
+        json={"nombre": "Harina de trigo"},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 200
+    fila = _item_row(session, creado["id"])
+    assert fila.created_by_id == johan
+    assert fila.updated_by_id == maria
+    assert fila.updated_at > fila.created_at
+
+
+def test_creating_a_product_with_initial_quantity_saves_the_user_as_author_of_the_movement(
+    logged_in_client, session
+):
+    creado = _create_item(logged_in_client, session, cantidad_inicial="5")
+
+    johan = _user_id(session, EMAIL)
+    movimientos = _movement_rows(session, creado["id"])
+    assert len(movimientos) == 1
+    assert movimientos[0].created_by_id == johan
+    assert movimientos[0].updated_by_id == johan
+    assert movimientos[0].created_at == movimientos[0].updated_at
+
+
+def test_adding_stock_saves_the_user_as_author_of_the_new_movement_and_leaves_the_product_untouched(
+    logged_in_client, session
+):
+    creado = _create_item(logged_in_client, session, cantidad_inicial="5")
+    johan = _user_id(session, EMAIL)
+    maria = _log_in_as_other_admin(logged_in_client)
+
+    response = logged_in_client.post(
+        f"{URL}/{creado['id']}/stock-movements",
+        json={"cantidad": "3"},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 200
+    # El stock no se guarda en el producto: solo se agregó un movimiento. El producto sigue como
+    # lo dejó Johan, con la edición igual a la creación.
+    producto = _item_row(session, creado["id"])
+    assert producto.updated_by_id == johan
+    assert producto.updated_at == producto.created_at
+    inicial, nuevo = _movement_rows(session, creado["id"])
+    assert inicial.created_by_id == johan
+    assert nuevo.created_by_id == maria
+    assert nuevo.updated_by_id == maria

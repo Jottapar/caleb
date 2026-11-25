@@ -5,12 +5,15 @@ from sqlmodel import select
 
 from app.modules.companies.models import Company
 from app.modules.items import service as items_service
+from app.modules.items.models import InventoryMovement
 from app.modules.receipts import service as receipts_service
 from app.modules.receipts.models import AccountReceivablePayment
 from app.modules.receipts.schemas import ReceiptItemLineCreate
 from app.modules.taxes.models import Tax
 from app.modules.third_parties import service as third_parties_service
 from app.modules.third_parties.schemas import ThirdPartyCreate
+from app.modules.users.models import User
+from tests.modules.receipts.conftest import EMAIL, PASSWORD
 
 URL = "/api/v1/receipts"
 ITEMS_URL = "/api/v1/items"
@@ -834,3 +837,48 @@ def test_cancel_credit_receipt_cancels_every_payment(logged_in_client, session):
     ).all()
     assert len(pagos) == 2  # no se borran
     assert {pago.estado for pago in pagos} == {"anulado"}
+
+
+def test_a_receipt_and_its_cancellation_save_each_user_as_author_of_the_stock_movements(
+    logged_in_client, session
+):
+    cliente_id = _create_cliente(logged_in_client)
+    item = _create_item(logged_in_client, session, cantidad_inicial="10")
+    johan = session.exec(select(User.id).where(User.email == EMAIL)).one()
+    # Johan crea a María (Admin) y la sesión pasa a ser la de ella: ella hace la venta.
+    maria = logged_in_client.post(
+        "/api/v1/users",
+        json={
+            "nombre": "María Admin",
+            "email": "maria@example.com",
+            "rol": "admin",
+            "password": "clave-de-maria",
+        },
+        headers=_csrf_headers(logged_in_client),
+    ).json()["id"]
+    logged_in_client.post(
+        "/api/v1/auth/login", json={"email": "maria@example.com", "password": "clave-de-maria"}
+    )
+    recibo = logged_in_client.post(
+        URL,
+        json={"tercero_id": cliente_id, "lineas": [{"item_id": item["id"], "cantidad": "3"}]},
+        headers=_csrf_headers(logged_in_client),
+    ).json()
+
+    # Johan vuelve a entrar y cancela el recibo de María.
+    logged_in_client.post("/api/v1/auth/login", json={"email": EMAIL, "password": PASSWORD})
+    logged_in_client.post(
+        f"{URL}/{recibo['id']}/cancel", headers=_csrf_headers(logged_in_client)
+    )
+
+    movimientos = session.exec(
+        select(InventoryMovement)
+        .where(InventoryMovement.item_id == item["id"])
+        .order_by(InventoryMovement.id)
+    ).all()
+    # Cantidad inicial (Johan), salida de la venta (María) y entrada de la cancelación (Johan).
+    assert [(m.tipo, m.created_by_id) for m in movimientos] == [
+        ("entrada", johan),
+        ("salida", maria),
+        ("entrada", johan),
+    ]
