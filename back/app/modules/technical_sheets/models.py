@@ -1,10 +1,12 @@
 from decimal import Decimal
 
 from sqlalchemy import Numeric
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field
+
+from app.core.mixins import AuditMixin
 
 
-class TechnicalSheet(SQLModel, table=True):
+class TechnicalSheet(AuditMixin, table=True):
     """Lo que se vende: un producto armado con insumos y mano de obra. Su costo no se guarda."""
 
     __tablename__ = "fichas_tecnicas"
@@ -18,7 +20,7 @@ class TechnicalSheet(SQLModel, table=True):
     activo: bool = Field(default=True)
 
 
-class TechnicalSheetItemLine(SQLModel, table=True):
+class TechnicalSheetItemLine(AuditMixin, table=True):
     """Un insumo de la ficha: cuanto consume UNA unidad de la ficha."""
 
     __tablename__ = "fichas_tecnicas_items"
@@ -30,7 +32,7 @@ class TechnicalSheetItemLine(SQLModel, table=True):
     cantidad: Decimal = Field(sa_type=Numeric(14, 4))
 
 
-class TechnicalSheetServiceLine(SQLModel, table=True):
+class TechnicalSheetServiceLine(AuditMixin, table=True):
     """La mano de obra de la ficha. Tabla aparte para no dejar item_id o servicio_id vacios."""
 
     __tablename__ = "fichas_tecnicas_servicios"

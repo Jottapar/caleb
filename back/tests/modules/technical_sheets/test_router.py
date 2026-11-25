@@ -7,6 +7,13 @@ from app.modules.items import service as items_service
 from app.modules.services import service as services_service
 from app.modules.services.schemas import ServiceCreate
 from app.modules.taxes.models import Tax
+from app.modules.technical_sheets.models import (
+    TechnicalSheet,
+    TechnicalSheetItemLine,
+    TechnicalSheetServiceLine,
+)
+from app.modules.users.models import User
+from tests.modules.technical_sheets.conftest import EMAIL
 
 URL = "/api/v1/technical-sheets"
 
@@ -533,3 +540,162 @@ def test_sheet_code_does_not_repeat_after_deleting_one_from_the_middle(logged_in
     nueva = _post(logged_in_client, session, nombre="D", servicios=linea).json()
 
     assert nueva["codigo"] == "F-0004"
+
+
+def _user_id(session, email: str) -> int:
+    return session.exec(select(User.id).where(User.email == email)).one()
+
+
+def _sheet_rows(session, sheet_id: int):
+    """La ficha y todas sus líneas (insumos y mano de obra), para revisar su auditoría."""
+    ficha = session.exec(select(TechnicalSheet).where(TechnicalSheet.id == sheet_id)).one()
+    insumos = session.exec(
+        select(TechnicalSheetItemLine).where(TechnicalSheetItemLine.ficha_tecnica_id == sheet_id)
+    ).all()
+    servicios = session.exec(
+        select(TechnicalSheetServiceLine).where(
+            TechnicalSheetServiceLine.ficha_tecnica_id == sheet_id
+        )
+    ).all()
+    return ficha, list(insumos), list(servicios)
+
+
+def test_creating_a_sheet_saves_the_user_as_author_of_the_sheet_and_all_its_lines(
+    logged_in_client, session
+):
+    gel = _insumo(session, "Gel", 1000)
+    corte = _servicio(session)
+    creada = _post(
+        logged_in_client,
+        session,
+        insumos=[{"item_id": gel.id, "cantidad": "0.1"}],
+        servicios=[{"servicio_id": corte.id, "cantidad": "1"}],
+    ).json()
+
+    johan = _user_id(session, EMAIL)
+    ficha, insumos, servicios = _sheet_rows(session, creada["id"])
+    assert len(insumos) == 1 and len(servicios) == 1
+    for fila in (ficha, *insumos, *servicios):
+        assert fila.created_by_id == johan
+        assert fila.updated_by_id == johan
+        assert fila.created_at == fila.updated_at
+
+
+def test_editing_a_sheet_saves_the_editor_as_updated_by_and_keeps_the_creator(
+    logged_in_client, session, log_in_as_other_admin
+):
+    gel = _insumo(session, "Gel", 1000)
+    cera = _insumo(session, "Cera", 2000)
+    corte = _servicio(session)
+    creada = _post(
+        logged_in_client,
+        session,
+        insumos=[{"item_id": gel.id, "cantidad": "0.1"}],
+        servicios=[{"servicio_id": corte.id, "cantidad": "1"}],
+    ).json()
+    johan = _user_id(session, EMAIL)
+    maria = log_in_as_other_admin(logged_in_client)
+
+    response = _put(
+        logged_in_client,
+        session,
+        creada["id"],
+        insumos=[{"item_id": cera.id, "cantidad": "2"}],
+        servicios=[{"servicio_id": corte.id, "cantidad": "1"}],
+    )
+
+    assert response.status_code == 200
+    ficha, insumos, servicios = _sheet_rows(session, creada["id"])
+    assert ficha.created_by_id == johan
+    assert ficha.updated_by_id == maria
+    assert ficha.updated_at > ficha.created_at
+    # Las líneas se reemplazan: las nuevas son filas nuevas, creadas por quien editó.
+    for linea in (*insumos, *servicios):
+        assert linea.created_by_id == maria
+        assert linea.updated_by_id == maria
+
+
+def test_editing_only_the_lines_of_a_sheet_counts_as_editing_the_sheet(
+    logged_in_client, session, log_in_as_other_admin
+):
+    gel = _insumo(session, "Gel", 1000)
+    cera = _insumo(session, "Cera", 2000)
+    corte = _servicio(session)
+    creada = _post(
+        logged_in_client,
+        session,
+        insumos=[{"item_id": gel.id, "cantidad": "0.1"}],
+        servicios=[{"servicio_id": corte.id, "cantidad": "1"}],
+    ).json()
+    johan = _user_id(session, EMAIL)
+    maria = log_in_as_other_admin(logged_in_client)
+
+    # Mismo nombre, precio e impuesto que al crearla: solo cambia el insumo.
+    response = _put(
+        logged_in_client,
+        session,
+        creada["id"],
+        nombre="Corte de pelo para hombre",
+        precio_venta="25000",
+        insumos=[{"item_id": cera.id, "cantidad": "2"}],
+        servicios=[{"servicio_id": corte.id, "cantidad": "1"}],
+    )
+
+    assert response.status_code == 200
+    ficha, _, _ = _sheet_rows(session, creada["id"])
+    assert ficha.created_by_id == johan
+    assert ficha.updated_by_id == maria
+    assert ficha.updated_at > ficha.created_at
+
+
+def test_saving_a_sheet_with_the_same_data_still_counts_as_an_edit(
+    logged_in_client, session, log_in_as_other_admin
+):
+    gel = _insumo(session, "Gel", 1000)
+    corte = _servicio(session)
+    lineas = {
+        "insumos": [{"item_id": gel.id, "cantidad": "0.1"}],
+        "servicios": [{"servicio_id": corte.id, "cantidad": "1"}],
+    }
+    creada = _post(logged_in_client, session, **lineas).json()
+    johan = _user_id(session, EMAIL)
+    maria = log_in_as_other_admin(logged_in_client)
+
+    # Nada cambia: mismo nombre, precio, impuesto y líneas que al crearla.
+    response = _put(
+        logged_in_client,
+        session,
+        creada["id"],
+        nombre="Corte de pelo para hombre",
+        precio_venta="25000",
+        **lineas,
+    )
+
+    assert response.status_code == 200
+    ficha, _, _ = _sheet_rows(session, creada["id"])
+    assert ficha.created_by_id == johan
+    assert ficha.updated_by_id == maria
+    assert ficha.updated_at > ficha.created_at
+
+
+def test_activating_or_deactivating_a_sheet_counts_as_editing_it(
+    logged_in_client, session, log_in_as_other_admin
+):
+    gel = _insumo(session, "Gel", 1000)
+    creada = _post(
+        logged_in_client, session, insumos=[{"item_id": gel.id, "cantidad": "0.1"}]
+    ).json()
+    johan = _user_id(session, EMAIL)
+    maria = log_in_as_other_admin(logged_in_client)
+
+    response = logged_in_client.patch(
+        f"{URL}/{creada['id']}", json={"activo": False}, headers=_csrf_headers(logged_in_client)
+    )
+
+    assert response.status_code == 200
+    ficha, insumos, _ = _sheet_rows(session, creada["id"])
+    assert ficha.created_by_id == johan
+    assert ficha.updated_by_id == maria
+    assert ficha.updated_at > ficha.created_at
+    # Activar o desactivar no toca las líneas: siguen como las dejó Johan.
+    assert [linea.updated_by_id for linea in insumos] == [johan]

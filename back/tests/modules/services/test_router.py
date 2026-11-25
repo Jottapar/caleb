@@ -1,5 +1,9 @@
+from sqlmodel import select
+
 from app.modules.companies.models import Company
 from app.modules.services.models import Service
+from app.modules.users.models import User
+from tests.modules.services.conftest import EMAIL
 
 URL = "/api/v1/services"
 
@@ -75,3 +79,13 @@ def test_list_services_requires_authentication(client):
     response = client.get(URL)
 
     assert response.status_code == 401
+
+
+def test_creating_a_service_saves_the_user_as_author(logged_in_client, session):
+    creado = _post(logged_in_client).json()
+
+    johan = session.exec(select(User.id).where(User.email == EMAIL)).one()
+    fila = session.exec(select(Service).where(Service.id == creado["id"])).one()
+    assert fila.created_by_id == johan
+    assert fila.updated_by_id == johan
+    assert fila.created_at == fila.updated_at

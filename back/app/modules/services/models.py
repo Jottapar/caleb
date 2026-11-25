@@ -1,10 +1,12 @@
 from decimal import Decimal
 
 from sqlalchemy import Numeric
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field
+
+from app.core.mixins import AuditMixin
 
 
-class Service(SQLModel, table=True):
+class Service(AuditMixin, table=True):
     """Mano de obra de una empresa. Solo tiene costo: no se vende sola ni mueve inventario."""
 
     __tablename__ = "servicios"

@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import Session, select
 
 from app.core.codes import next_code
@@ -214,6 +215,10 @@ def update_technical_sheet(
     sheet.nombre = data.nombre.strip()
     sheet.precio_venta = data.precio_venta
     sheet.impuesto_id = data.impuesto_id
+    # Editar una ficha siempre cuenta como edicion. Las lineas son tablas aparte (sin relacion en
+    # el modelo): si solo ellas cambian, SQLAlchemy no ve cambios en la ficha y su fecha y su
+    # editor no se actualizarian. `flag_modified` la marca como modificada de todos modos.
+    flag_modified(sheet, "updated_at")
     session.add(sheet)
 
     # Las lineas se reemplazan completas: se borran las viejas y se crean las que llegan,
