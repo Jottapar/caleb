@@ -18,6 +18,10 @@ SYSTEM_USER_EMAIL = "caleb@caleb.com"
 ACTOR_KEY = "actor_id"
 # Clave de `session.info` donde se guarda el id de Caleb tras buscarlo, para no repetir la consulta.
 SYSTEM_USER_KEY = "system_user_id"
+# Clave de `session.info` donde se guardan las filas creadas en la transaccion en curso. Un servicio
+# puede crear una fila, hacer `flush` para tener su id y seguir completandola (por ejemplo, los
+# totales de un recibo) antes del `commit`: eso sigue siendo la creacion, no una edicion.
+CREATED_NOW_KEY = "created_in_transaction"
 
 
 def _author_id(session: Session) -> int:
@@ -35,17 +39,33 @@ def _author_id(session: Session) -> int:
 @event.listens_for(Session, "before_flush")
 def fill_audit(session, flush_context, instances):
     """Llena la auditoria de las filas nuevas y de las que cambiaron, antes de guardarlas."""
+    # Se guarda la fila misma (no su id): asi no se puede reusar la identidad de una fila ya olvidada.
+    created_now = session.info.setdefault(CREATED_NOW_KEY, {})
     for row in session.new:
         if isinstance(row, DatesMixin):
             # Al crear, la edicion es igual a la creacion (si no, diferirian por microsegundos).
             row.updated_at = row.created_at
+            created_now[id(row)] = row
         if isinstance(row, AuditMixin):
             row.created_by_id = row.updated_by_id = _author_id(session)
 
     for row in session.dirty:
         # `dirty` incluye filas a las que se les asigno el mismo valor: `is_modified` filtra
         # las que cambiaron de verdad.
+        if id(row) in created_now:
+            continue
         if isinstance(row, DatesMixin) and session.is_modified(row):
             row.updated_at = utc_now()
             if isinstance(row, AuditMixin):
                 row.updated_by_id = _author_id(session)
+
+
+@event.listens_for(Session, "after_commit")
+def _forget_after_commit(session):
+    """Con el commit termina la creacion: de ahi en adelante, cambiar una fila es editarla."""
+    session.info.pop(CREATED_NOW_KEY, None)
+
+
+@event.listens_for(Session, "after_soft_rollback")
+def _forget_after_rollback(session, previous_transaction):
+    session.info.pop(CREATED_NOW_KEY, None)

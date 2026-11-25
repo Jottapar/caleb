@@ -106,3 +106,24 @@ def test_rows_created_without_a_request_look_up_caleb_only_once_per_session(sess
         event.remove(conexion, "before_cursor_execute", contar)
 
     assert len(consultas) == 1
+
+
+def test_changing_a_row_in_the_same_transaction_that_created_it_is_still_the_creation(session):
+    bank, tax = _company_with_bank_and_tax(session)
+
+    # Se crea y se modifica antes del commit (como un servicio que guarda y luego calcula totales).
+    bank.nombre = "Davivienda"
+    tax.nombre = "IVA 5%"
+    session.flush()
+
+    for fila in (bank, tax):
+        assert fila.updated_at == fila.created_at
+    session.commit()
+
+    # Ya con el commit hecho, la creación terminó: ahora sí es una edición.
+    bank.nombre = "Bogotá"
+    tax.nombre = "IVA 0%"
+    session.commit()
+
+    for fila in (bank, tax):
+        assert fila.updated_at > fila.created_at
