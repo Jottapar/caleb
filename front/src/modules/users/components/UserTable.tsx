@@ -1,4 +1,4 @@
-import { Table } from "@chakra-ui/react";
+import { Button, Table } from "@chakra-ui/react";
 
 import type { User, UserRole } from "../types";
 
@@ -11,11 +11,13 @@ const ROLE_LABELS: Record<UserRole, string> = {
 
 type Props = {
   users: User[];
+  // Se llama con el usuario de la fila cuyo botón «Editar» se pulsó.
+  onEdit: (user: User) => void;
 };
 
-// La lista de usuarios de la empresa. Solo pinta: no tiene botones por fila todavía
-// (editar es la historia 16c; desactivar y activar, la 16g).
-export function UserTable({ users }: Props) {
+// La lista de usuarios de la empresa. Desactivar y activar no tienen botón aquí: se hacen
+// dentro del panel de editar.
+export function UserTable({ users, onEdit }: Props) {
   return (
     <Table.Root>
       <Table.Header>
@@ -24,6 +26,7 @@ export function UserTable({ users }: Props) {
           <Table.ColumnHeader>Correo</Table.ColumnHeader>
           <Table.ColumnHeader>Rol</Table.ColumnHeader>
           <Table.ColumnHeader>Estado</Table.ColumnHeader>
+          <Table.ColumnHeader></Table.ColumnHeader>
         </Table.Row>
       </Table.Header>
       <Table.Body>
@@ -33,6 +36,11 @@ export function UserTable({ users }: Props) {
             <Table.Cell>{user.email}</Table.Cell>
             <Table.Cell>{ROLE_LABELS[user.rol]}</Table.Cell>
             <Table.Cell>{user.activo ? "Activo" : "Inactivo"}</Table.Cell>
+            <Table.Cell>
+              <Button size="sm" variant="ghost" onClick={() => onEdit(user)}>
+                Editar
+              </Button>
+            </Table.Cell>
           </Table.Row>
         ))}
       </Table.Body>

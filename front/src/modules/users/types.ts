@@ -18,3 +18,9 @@ export type User = {
   rol: UserRole;
   activo: boolean;
 };
+
+// Lo que se manda a PATCH /users/{id} (UserUpdate en el backend). Todo es opcional: lo que no se
+// manda se queda como estaba. No incluye la contraseña: editar no la toca.
+export type UserUpdate = Partial<
+  Pick<User, "nombre" | "email" | "rol" | "activo">
+>;

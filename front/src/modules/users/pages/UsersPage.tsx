@@ -1,17 +1,29 @@
-import { Button, Center, Heading, HStack, Spinner, Stack, Text } from "@chakra-ui/react";
+import {
+  Button,
+  Center,
+  Heading,
+  HStack,
+  Spinner,
+  Stack,
+  Text,
+} from "@chakra-ui/react";
 import { useState } from "react";
 
 import { CreateUserDialog } from "../components/CreateUserDialog";
+import { EditUserDrawer } from "../components/EditUserDrawer";
 import { UserTable } from "../components/UserTable";
 import { useUsers } from "../hooks/useUsers";
-import type { User } from "../types";
 
 // Los usuarios de la empresa.
 export function UsersPage() {
   const users = useUsers();
   const [creating, setCreating] = useState(false);
-  // El último usuario creado, para el aviso de éxito; null si no hay nada que avisar.
-  const [createdUser, setCreatedUser] = useState<User | null>(null);
+  // El aviso de éxito (usuario creado o editado); null si no hay nada que avisar.
+  const [notice, setNotice] = useState<string | null>(null);
+  // El id del usuario cuyo panel de editar está abierto; null si no hay panel. Se guarda el id y
+  // no el usuario para que el panel vea siempre los datos más nuevos de la lista.
+  const [editingUserId, setEditingUserId] = useState<number | null>(null);
+  const editingUser = users.data?.find((user) => user.id === editingUserId);
 
   return (
     <Stack gap="6">
@@ -20,7 +32,7 @@ export function UsersPage() {
         <Button
           colorPalette="brand"
           onClick={() => {
-            setCreatedUser(null);
+            setNotice(null);
             setCreating(true);
           }}
         >
@@ -28,10 +40,9 @@ export function UsersPage() {
         </Button>
       </HStack>
 
-      {createdUser && (
+      {notice && (
         <Text role="status" color="fg.success">
-          Usuario creado: {createdUser.nombre} ({createdUser.email}). Entrégale su correo y la
-          contraseña inicial.
+          {notice}
         </Text>
       )}
 
@@ -41,12 +52,41 @@ export function UsersPage() {
         </Center>
       )}
 
-      {users.isError && <Text color="fg.error">No pudimos cargar los usuarios. Intenta de nuevo.</Text>}
+      {users.isError && (
+        <Text color="fg.error">
+          No pudimos cargar los usuarios. Intenta de nuevo.
+        </Text>
+      )}
 
       {/* No hay estado "vacío": la lista siempre trae por lo menos al Admin que la está viendo. */}
-      {users.data && <UserTable users={users.data} />}
+      {users.data && (
+        <UserTable
+          users={users.data}
+          onEdit={(user) => {
+            setNotice(null);
+            setEditingUserId(user.id);
+          }}
+        />
+      )}
 
-      {creating && <CreateUserDialog onCreated={setCreatedUser} onClose={() => setCreating(false)} />}
+      {editingUser && (
+        <EditUserDrawer
+          user={editingUser}
+          onSaved={(user) => setNotice(`Usuario actualizado: ${user.nombre}.`)}
+          onClose={() => setEditingUserId(null)}
+        />
+      )}
+
+      {creating && (
+        <CreateUserDialog
+          onCreated={(user) =>
+            setNotice(
+              `Usuario creado: ${user.nombre} (${user.email}). Entrégale su correo y la contraseña inicial.`,
+            )
+          }
+          onClose={() => setCreating(false)}
+        />
+      )}
     </Stack>
   );
 }
