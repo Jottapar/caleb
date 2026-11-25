@@ -1,12 +1,9 @@
-from datetime import datetime
-
-from sqlalchemy import DateTime
 from sqlmodel import Field, SQLModel
 
-from app.core.mixins import utc_now
+from app.core.mixins import AuditMixin
 
 
-class User(SQLModel, table=True):
+class User(AuditMixin, table=True):
     """Una persona que entra al sistema. `password_hash` nunca guarda texto plano."""
 
     __tablename__ = "usuarios"
@@ -16,10 +13,9 @@ class User(SQLModel, table=True):
     email: str = Field(max_length=150, unique=True)
     password_hash: str = Field(max_length=255)
     activo: bool = Field(default=True)
-    created_at: datetime = Field(default_factory=utc_now, sa_type=DateTime(timezone=True))
 
 
-class UserCompany(SQLModel, table=True):
+class UserCompany(AuditMixin, table=True):
     """El rol de un usuario dentro de una empresa.
 
     En el MVP un usuario esta en una sola empresa, pero la tabla ya soporta

@@ -2,6 +2,7 @@ import pytest
 from sqlmodel import select
 
 from app.modules.companies.models import Company
+from app.modules.users.models import User
 
 URL = "/api/v1/company"
 
@@ -9,6 +10,10 @@ URL = "/api/v1/company"
 def _my_company(session) -> Company:
     """La empresa 'Panadería Luna' que crea la fixture `owner`."""
     return session.exec(select(Company).where(Company.nombre == "Panadería Luna")).one()
+
+
+def _my_company_by_name(session, nombre: str) -> Company:
+    return session.exec(select(Company).where(Company.nombre == nombre)).one()
 
 
 def _csrf_headers(logged_in_client):
@@ -211,3 +216,19 @@ def test_patch_company_treats_null_in_optional_fields_as_empty(logged_in_client,
 
     assert response.status_code == 200
     assert response.json()[campo] == ""
+
+
+def test_editing_the_company_saves_the_editor_as_updated_by_and_keeps_the_creator(
+    logged_in_client, session
+):
+    admin = session.exec(select(User.id).where(User.email == "johan@example.com")).one()
+    caleb = session.exec(select(User.id).where(User.email == "caleb@caleb.com")).one()
+
+    response = _patch(logged_in_client, nombre="Panadería Sol")
+
+    assert response.status_code == 200
+    company = _my_company_by_name(session, "Panadería Sol")
+    # La empresa la creó la consola (Caleb); quien la editó es el Admin de esta petición.
+    assert company.created_by_id == caleb
+    assert company.updated_by_id == admin
+    assert company.updated_at > company.created_at

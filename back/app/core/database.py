@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import Depends
 from sqlmodel import Session, create_engine
 
+from app.core import audit  # noqa: F401 (al importarlo se registra el evento que llena la auditoria)
 from app.core.config import settings
 
 engine = create_engine(

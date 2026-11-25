@@ -1,7 +1,9 @@
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field
+
+from app.core.mixins import DatesMixin
 
 
-class Bank(SQLModel, table=True):
+class Bank(DatesMixin, table=True):
     """Catalogo global de bancos: sin empresa_id, la misma lista para todas las empresas.
 
     El usuario no la edita. Se carga y se amplia con migraciones; `activo = False`

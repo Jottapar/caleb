@@ -4,6 +4,7 @@ from fastapi import Depends
 from sqlmodel import Session
 
 from app.core import database
+from app.core.audit import ACTOR_KEY
 from app.core.database import SessionDep
 from app.core.errors import UnauthorizedError
 from app.core.security import auth
@@ -21,12 +22,17 @@ def get_user_from_uid(uid: str) -> User | None:
         return users_service.get_active_user(session, int(uid))
 
 
-def get_current_user(user: User | None = Depends(auth.get_current_subject)) -> User:
+def get_current_user(
+    session: SessionDep, user: User | None = Depends(auth.get_current_subject)
+) -> User:
     # AuthX no lanza nada si el subject getter devuelve None (token valido de
     # un usuario que ya no existe o se desactivo): sin este chequeo, el
     # endpoint recibiria None y explotaria con un 500 en vez de un 401.
     if user is None:
         raise UnauthorizedError(CREDENCIALES_INVALIDAS)
+    # El usuario de la peticion queda en la sesion de esta peticion: `core/audit.py` lo pone como
+    # autor de todo lo que se guarde con ella.
+    session.info[ACTOR_KEY] = user.id
     return user
 
 

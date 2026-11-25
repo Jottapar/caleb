@@ -74,6 +74,42 @@ def test_create_user_when_two_requests_race_for_the_same_email_returns_409(
     assert _create(logged_in_client).status_code == 201
 
 
+def test_creating_a_user_saves_the_admin_as_author_of_the_user_and_the_link(
+    logged_in_client, session
+):
+    maria = _create(logged_in_client).json()
+
+    admin = _admin_id(session)
+    user = session.exec(select(User).where(User.id == maria["id"])).one()
+    link = session.exec(select(UserCompany).where(UserCompany.usuario_id == maria["id"])).one()
+    for fila in (user, link):
+        assert fila.created_by_id == admin
+        assert fila.updated_by_id == admin
+        assert fila.created_at == fila.updated_at
+
+
+def test_editing_a_user_saves_the_editor_as_updated_by_and_keeps_the_creator(
+    logged_in_client, session
+):
+    johan = _admin_id(session)
+    maria = _create(
+        logged_in_client, nombre="María Admin", email="maria.admin@example.com", rol="admin"
+    ).json()
+    pedro = _create(logged_in_client, nombre="Pedro", email="pedro@example.com").json()
+
+    # María entra y edita a Pedro: ella es quien lo edita, Johan sigue siendo quien lo creó.
+    _login(logged_in_client, "maria.admin@example.com", DATOS["password"])
+    response = _patch(logged_in_client, pedro["id"], nombre="Pedro Gómez", rol="usuario")
+
+    assert response.status_code == 200
+    user = session.exec(select(User).where(User.id == pedro["id"])).one()
+    link = session.exec(select(UserCompany).where(UserCompany.usuario_id == pedro["id"])).one()
+    for fila in (user, link):
+        assert fila.created_by_id == johan
+        assert fila.updated_by_id == maria["id"]
+        assert fila.updated_at > fila.created_at
+
+
 def test_create_user_with_email_from_another_company_returns_409(logged_in_client, session):
     service.create_company_with_owner(
         session,
@@ -242,6 +278,14 @@ def test_list_users_does_not_include_users_from_other_companies(logged_in_client
     correos = {usuario["email"] for usuario in logged_in_client.get(URL).json()}
 
     assert correos == {"johan@example.com", "maria@example.com"}
+
+
+def test_list_users_does_not_include_caleb(logged_in_client):
+    # Caleb es el sistema: no pertenece a ninguna empresa, así que no sale en ninguna lista.
+    correos = [usuario["email"] for usuario in logged_in_client.get(URL).json()]
+
+    assert "caleb@caleb.com" not in correos
+    assert correos == ["johan@example.com"]
 
 
 def test_list_users_includes_inactive_users(logged_in_client, session):

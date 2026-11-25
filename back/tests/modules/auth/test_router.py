@@ -93,6 +93,17 @@ def test_refresh_without_cookie_returns_401(client):
     assert response.status_code == 401
 
 
+def test_caleb_cannot_log_in(client):
+    # Caleb es el sistema: inactivo y con una contraseña que no es un hash válido.
+    for clave in ["!", "caleb", "una-clave-segura"]:
+        response = client.post(
+            "/api/v1/auth/login", json={"email": "caleb@caleb.com", "password": clave}
+        )
+
+        assert response.status_code == 401
+        assert "access_token_cookie" not in response.cookies
+
+
 def test_login_with_nonexistent_email_returns_same_401_generic_message(client):
     response = client.post(
         "/api/v1/auth/login",

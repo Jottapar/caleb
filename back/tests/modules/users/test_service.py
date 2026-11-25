@@ -145,3 +145,46 @@ def test_reset_password_changes_password_ignoring_email_case(session):
 def test_reset_password_with_unknown_email_raises_not_found(session):
     with pytest.raises(NotFoundError):
         service.reset_password(session, email="nadie@example.com", new_password="clave")
+
+
+def test_editing_without_a_request_saves_caleb_as_updated_by(session):
+    service.create_company_with_owner(
+        session,
+        company_name="Panadería Luna",
+        owner_name="Johan",
+        email="johan@example.com",
+        password="clave-vieja",
+    )
+    user = session.exec(select(User).where(User.email == "johan@example.com")).one()
+    caleb = session.exec(select(User.id).where(User.email == "caleb@caleb.com")).one()
+
+    # Una petición de Johan edita su nombre: esa edición es de él, no de Caleb.
+    session.info["actor_id"] = user.id
+    user.nombre = "Johan Pardo"
+    session.commit()
+    assert user.updated_by_id == user.id
+
+    # Ahora la consola cambia la contraseña, sin petición detrás: esa edición es de Caleb.
+    session.info.pop("actor_id")
+    service.reset_password(session, email="johan@example.com", new_password="clave-nueva")
+
+    assert user.updated_by_id == caleb
+
+
+def test_create_company_with_owner_leaves_caleb_as_author_of_everything(session):
+    service.create_company_with_owner(
+        session,
+        company_name="Panadería Luna",
+        owner_name="Johan",
+        email="johan@example.com",
+        password="una-clave-segura",
+    )
+
+    caleb = session.exec(select(User.id).where(User.email == "caleb@caleb.com")).one()
+    company = session.exec(select(Company).where(Company.nombre == "Panadería Luna")).one()
+    owner = session.exec(select(User).where(User.email == "johan@example.com")).one()
+    link = session.exec(select(UserCompany).where(UserCompany.usuario_id == owner.id)).one()
+    for fila in (company, owner, link):
+        assert fila.created_by_id == caleb
+        assert fila.updated_by_id == caleb
+        assert fila.created_at == fila.updated_at

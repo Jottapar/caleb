@@ -1,10 +1,12 @@
 from decimal import Decimal
 
 from sqlalchemy import Numeric
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field
+
+from app.core.mixins import DatesMixin
 
 
-class Tax(SQLModel, table=True):
+class Tax(DatesMixin, table=True):
     """Un impuesto de una empresa, por ejemplo 'IVA 19%'."""
 
     __tablename__ = "impuestos"
