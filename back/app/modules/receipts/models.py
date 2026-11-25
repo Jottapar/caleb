@@ -4,10 +4,10 @@ from decimal import Decimal
 from sqlalchemy import DateTime, Numeric
 from sqlmodel import Field, SQLModel
 
-from app.core.mixins import utc_now
+from app.core.mixins import AuditMixin, utc_now
 
 
-class Receipt(SQLModel, table=True):
+class Receipt(AuditMixin, table=True):
     """Un recibo de venta. `condicion` y `estado` los valida el servicio, no hay enum."""
 
     __tablename__ = "recibos"
@@ -26,10 +26,9 @@ class Receipt(SQLModel, table=True):
     impuestos_total: Decimal = Field(sa_type=Numeric(14, 2), default=0)
     total: Decimal = Field(sa_type=Numeric(14, 2), default=0)
     notas: str = Field(max_length=255, default="")
-    created_at: datetime = Field(default_factory=utc_now, sa_type=DateTime(timezone=True))
 
 
-class ReceiptItemLine(SQLModel, table=True):
+class ReceiptItemLine(AuditMixin, table=True):
     """Una linea de ítem de un recibo. Copia nombre, precio e impuesto al momento de vender."""
 
     __tablename__ = "recibo_lineas_items"
@@ -44,7 +43,7 @@ class ReceiptItemLine(SQLModel, table=True):
     total_linea: Decimal = Field(sa_type=Numeric(14, 2))
 
 
-class ReceiptSheetLine(SQLModel, table=True):
+class ReceiptSheetLine(AuditMixin, table=True):
     """Una ficha tecnica vendida en un recibo. Copia nombre, precio e impuesto al vender.
 
     Tabla aparte de `recibo_lineas_items` para no dejar `item_id` o `ficha_tecnica_id` vacios.

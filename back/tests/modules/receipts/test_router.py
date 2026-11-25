@@ -7,7 +7,12 @@ from app.modules.companies.models import Company
 from app.modules.items import service as items_service
 from app.modules.items.models import InventoryMovement
 from app.modules.receipts import service as receipts_service
-from app.modules.receipts.models import AccountReceivablePayment
+from app.modules.receipts.models import (
+    AccountReceivablePayment,
+    Receipt,
+    ReceiptItemLine,
+    ReceiptSheetLine,
+)
 from app.modules.receipts.schemas import ReceiptItemLineCreate
 from app.modules.taxes.models import Tax
 from app.modules.third_parties import service as third_parties_service
@@ -870,3 +875,85 @@ def test_a_receipt_and_its_cancellation_save_each_user_as_author_of_the_stock_mo
         ("salida", maria),
         ("entrada", johan),
     ]
+
+
+def _receipt_rows(session, receipt_id: int):
+    """El recibo y todas sus líneas (de productos y de fichas), para revisar su auditoría."""
+    recibo = session.exec(select(Receipt).where(Receipt.id == receipt_id)).one()
+    items = session.exec(
+        select(ReceiptItemLine).where(ReceiptItemLine.recibo_id == receipt_id)
+    ).all()
+    fichas = session.exec(
+        select(ReceiptSheetLine).where(ReceiptSheetLine.recibo_id == receipt_id)
+    ).all()
+    return recibo, list(items), list(fichas)
+
+
+def _receipt_with_item_and_sheet(logged_in_client, session) -> dict:
+    cliente_id = _create_cliente(logged_in_client)
+    pan = _create_item(logged_in_client, session, cantidad_inicial="10")
+    gel = _gel(logged_in_client, session)
+    ficha = _create_sheet(logged_in_client, session, [(gel, "0.5")])
+    response = _post_receipt(
+        logged_in_client,
+        cliente_id,
+        lineas=[{"item_id": pan["id"], "cantidad": "2"}],
+        lineas_fichas=[{"ficha_tecnica_id": ficha["id"], "cantidad": "1"}],
+    )
+    assert response.status_code == 201, response.json()
+    return response.json()
+
+
+def test_creating_a_receipt_saves_the_user_as_author_of_the_receipt_and_all_its_lines(
+    logged_in_client, session
+):
+    creado = _receipt_with_item_and_sheet(logged_in_client, session)
+
+    johan = session.exec(select(User.id).where(User.email == EMAIL)).one()
+    recibo, items, fichas = _receipt_rows(session, creado["id"])
+    assert len(items) == 1 and len(fichas) == 1
+    for fila in (recibo, *items, *fichas):
+        assert fila.created_by_id == johan
+        assert fila.updated_by_id == johan
+        assert fila.created_at == fila.updated_at
+
+
+def test_cancelling_a_receipt_saves_the_canceller_as_updated_by_and_leaves_its_lines_untouched(
+    logged_in_client, session, log_in_as_other_admin
+):
+    creado = _receipt_with_item_and_sheet(logged_in_client, session)
+    johan = session.exec(select(User.id).where(User.email == EMAIL)).one()
+    maria = log_in_as_other_admin(logged_in_client)
+
+    response = logged_in_client.post(
+        f"{URL}/{creado['id']}/cancel", headers=_csrf_headers(logged_in_client)
+    )
+
+    assert response.status_code == 200
+    recibo, items, fichas = _receipt_rows(session, creado["id"])
+    assert recibo.created_by_id == johan
+    assert recibo.updated_by_id == maria
+    assert recibo.updated_at > recibo.created_at
+    # Cancelar no toca las líneas: siguen como las dejó Johan.
+    for linea in (*items, *fichas):
+        assert linea.updated_by_id == johan
+        assert linea.updated_at == linea.created_at
+
+
+def test_cancelling_a_credit_receipt_saves_the_canceller_as_updated_by(
+    logged_in_client, session, log_in_as_other_admin
+):
+    creado = _credit_receipt(logged_in_client, session)
+    johan = session.exec(select(User.id).where(User.email == EMAIL)).one()
+    maria = log_in_as_other_admin(logged_in_client)
+
+    response = logged_in_client.post(
+        f"{URL}/{creado['id']}/cancel", headers=_csrf_headers(logged_in_client)
+    )
+
+    assert response.status_code == 200
+    recibo, _, _ = _receipt_rows(session, creado["id"])
+    assert recibo.condicion == "credito"
+    assert recibo.created_by_id == johan
+    assert recibo.updated_by_id == maria
+    assert recibo.updated_at > recibo.created_at
