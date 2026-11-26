@@ -30,6 +30,14 @@ export function ResetPasswordDialog({ user, onReset, onClose }: Props) {
     ? null
     : ((isAxiosError(error) ? error.response?.data?.message : null) ?? ERROR_GENERICO);
 
+  // El error del backend se quita apenas se vuelve a escribir: ya no habla de lo que hay en pantalla.
+  // Solo si hay un error que quitar: reiniciar siempre cortaría una petición en curso.
+  function clearBackendError() {
+    if (resetPassword.isError) {
+      resetPassword.reset();
+    }
+  }
+
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     const nuevosErrores = validateNewPassword(next, confirmation);
@@ -66,7 +74,10 @@ export function ResetPasswordDialog({ user, onReset, onClose }: Props) {
                     type="password"
                     autoComplete="new-password"
                     value={next}
-                    onChange={(event) => setNext(event.target.value)}
+                    onChange={(event) => {
+                      setNext(event.target.value);
+                      clearBackendError();
+                    }}
                   />
                   <Field.ErrorText>{errors.next}</Field.ErrorText>
                 </Field.Root>
@@ -76,7 +87,10 @@ export function ResetPasswordDialog({ user, onReset, onClose }: Props) {
                     type="password"
                     autoComplete="new-password"
                     value={confirmation}
-                    onChange={(event) => setConfirmation(event.target.value)}
+                    onChange={(event) => {
+                      setConfirmation(event.target.value);
+                      clearBackendError();
+                    }}
                   />
                   <Field.ErrorText>{errors.confirmation}</Field.ErrorText>
                 </Field.Root>

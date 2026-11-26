@@ -116,8 +116,8 @@ export function EditUserDrawer({ user, onSaved, onDeleted, onPasswordReset, onCl
             >
               {user.activo ? "Desactivar usuario" : "Activar usuario"}
             </Button>
-            {/* Eliminar es para limpiar un usuario creado por error: solo si ya está inactivo y no
-                tiene historial. */}
+            {/* Restablecer es solo del Admin y nunca sobre sí mismo: para la propia contraseña está
+                «Cambiar mi contraseña». */}
             {me.data?.rol === "admin" && me.data.id !== user.id && (
               <Button
                 mt="6"
@@ -128,6 +128,8 @@ export function EditUserDrawer({ user, onSaved, onDeleted, onPasswordReset, onCl
                 Restablecer contraseña
               </Button>
             )}
+            {/* Eliminar es para limpiar un usuario creado por error: solo si ya está inactivo y no
+                tiene historial. */}
             {!user.activo && !user.tiene_historial && (
               <Button
                 mt="6"

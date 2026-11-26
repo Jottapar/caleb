@@ -911,3 +911,45 @@ it("al restablecer, si el backend rechaza el mensaje se muestra y el diálogo si
   expect(screen.getByRole("dialog", { name: /restablecer la contraseña/i })).toBeInTheDocument();
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
 });
+
+it("al restablecer, el error del backend se quita apenas el Admin vuelve a escribir", async () => {
+  serveUsers([{ ...MARIA_ACTIVA }]);
+  server.use(
+    http.post(`${URL}/1/password`, () =>
+      HttpResponse.json({ message: "Solo un Admin puede restablecer la contraseña de otro usuario" }, { status: 403 }),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  const dialogo = await abrirRestablecer(user);
+  await llenarNueva(user, dialogo, { nueva: "clave-nueva-123", confirmar: "clave-nueva-123" });
+  await user.click(within(dialogo).getByRole("button", { name: /^restablecer$/i }));
+  await within(dialogo).findByText(/solo un admin puede restablecer/i);
+  await user.type(within(dialogo).getByLabelText(/^contraseña nueva/i), "x");
+
+  expect(within(dialogo).queryByText(/solo un admin puede restablecer/i)).not.toBeInTheDocument();
+});
+
+it("al cambiar mi contraseña, el error del backend se quita apenas se vuelve a escribir", async () => {
+  serveUsers([{ ...ADMIN_UNICO }]);
+  server.use(
+    http.post(`${URL}/me/password`, () =>
+      HttpResponse.json({ message: "La contraseña actual no es correcta" }, { status: 422 }),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  const dialogo = await abrirCambiarContrasena(user);
+  await llenarContrasenas(user, dialogo, {
+    actual: "equivocada",
+    nueva: "clave-nueva-123",
+    confirmar: "clave-nueva-123",
+  });
+  await user.click(within(dialogo).getByRole("button", { name: /^guardar$/i }));
+  await within(dialogo).findByText("La contraseña actual no es correcta");
+  await user.type(within(dialogo).getByLabelText(/^contraseña actual/i), "x");
+
+  expect(within(dialogo).queryByText("La contraseña actual no es correcta")).not.toBeInTheDocument();
+});
