@@ -14,6 +14,8 @@ type TestUser = {
   email: string;
   rol: string;
   activo: boolean;
+  // Lo calcula el backend; las pruebas que no hablan de historial lo dejan sin poner.
+  tiene_historial?: boolean;
 };
 
 // Una "base" en memoria: el GET devuelve lo que haya y el PATCH aplica los cambios que llegan.
@@ -28,6 +30,11 @@ function serveUsers(usuarios: TestUser[]) {
       const usuario = usuarios.find((u) => u.id === Number(params.id))!;
       Object.assign(usuario, cambios);
       return HttpResponse.json(usuario);
+    }),
+    http.delete(`${URL}/:id`, ({ params }) => {
+      const posicion = usuarios.findIndex((u) => u.id === Number(params.id));
+      usuarios.splice(posicion, 1);
+      return new HttpResponse(null, { status: 204 });
     }),
   );
   return patches;
@@ -483,4 +490,137 @@ it("el error de último Admin activo al desactivar se muestra y no cambia el est
   expect(screen.getByRole("alertdialog")).toBeInTheDocument();
   const filaJohan = screen.getByRole("row", { name: /johan/i, hidden: true });
   expect(within(filaJohan).getByText("Activo")).toBeInTheDocument();
+});
+
+
+it("un usuario inactivo y sin historial ofrece Eliminar en el panel", async () => {
+  serveUsers([
+    {
+      id: 1,
+      nombre: "María Pérez",
+      email: "maria@example.com",
+      rol: "contador",
+      activo: false,
+      tiene_historial: false,
+    },
+  ]);
+  const user = userEvent.setup();
+
+  renderPage();
+  const fila = await screen.findByRole("row", { name: /maría pérez/i });
+  await user.click(within(fila).getByRole("button", { name: /editar/i }));
+  const panel = await screen.findByRole("dialog", { name: /editar usuario/i });
+
+  expect(
+    within(panel).getByRole("button", { name: /^eliminar usuario$/i }),
+  ).toBeInTheDocument();
+});
+
+it.each([
+  { caso: "activo", activo: true, tiene_historial: false },
+  { caso: "inactivo con historial", activo: false, tiene_historial: true },
+])("un usuario $caso no ofrece Eliminar", async ({ activo, tiene_historial }) => {
+  serveUsers([
+    {
+      id: 1,
+      nombre: "María Pérez",
+      email: "maria@example.com",
+      rol: "contador",
+      activo,
+      tiene_historial,
+    },
+  ]);
+  const user = userEvent.setup();
+
+  renderPage();
+  const fila = await screen.findByRole("row", { name: /maría pérez/i });
+  await user.click(within(fila).getByRole("button", { name: /editar/i }));
+  const panel = await screen.findByRole("dialog", { name: /editar usuario/i });
+
+  expect(
+    within(panel).queryByRole("button", { name: /eliminar usuario/i }),
+  ).not.toBeInTheDocument();
+});
+
+const MARIA_ELIMINABLE = {
+  id: 1,
+  nombre: "María Pérez",
+  email: "maria@example.com",
+  rol: "contador",
+  activo: false,
+  tiene_historial: false,
+};
+
+async function abrirPanelDeMaria(user: ReturnType<typeof userEvent.setup>) {
+  const fila = await screen.findByRole("row", { name: /maría pérez/i });
+  await user.click(within(fila).getByRole("button", { name: /editar/i }));
+  return screen.findByRole("dialog", { name: /editar usuario/i });
+}
+
+it("Eliminar pide confirmación y, al confirmar, el usuario desaparece de la lista, el panel se cierra y avisa", async () => {
+  serveUsers([
+    { id: 2, nombre: "Johan", email: "johan@example.com", rol: "admin", activo: true },
+    { ...MARIA_ELIMINABLE },
+  ]);
+  const user = userEvent.setup();
+
+  renderPage();
+  const panel = await abrirPanelDeMaria(user);
+  await user.click(within(panel).getByRole("button", { name: /^eliminar usuario$/i }));
+  const confirmacion = await screen.findByRole("alertdialog");
+  expect(confirmacion).toHaveTextContent(/¿eliminar a maría pérez\?/i);
+  await user.click(within(confirmacion).getByRole("button", { name: /^eliminar$/i }));
+
+  await waitFor(() =>
+    expect(screen.queryByRole("row", { name: /maría pérez/i })).not.toBeInTheDocument(),
+  );
+  expect(screen.queryByRole("dialog", { name: /editar usuario/i })).not.toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent(/usuario eliminado: maría pérez/i);
+});
+
+it("cancelar la confirmación de eliminar no manda nada", async () => {
+  let eliminaciones = 0;
+  serveUsers([{ ...MARIA_ELIMINABLE }]);
+  server.use(
+    http.delete(`${URL}/:id`, () => {
+      eliminaciones += 1;
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  const panel = await abrirPanelDeMaria(user);
+  await user.click(within(panel).getByRole("button", { name: /^eliminar usuario$/i }));
+  const confirmacion = await screen.findByRole("alertdialog");
+  await user.click(within(confirmacion).getByRole("button", { name: /cancelar/i }));
+
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+  expect(eliminaciones).toBe(0);
+  expect(screen.getByRole("row", { name: /maría pérez/i, hidden: true })).toBeInTheDocument();
+});
+
+it("si el backend rechaza eliminar, el mensaje se muestra en la confirmación y el usuario sigue en la lista", async () => {
+  serveUsers([{ ...MARIA_ELIMINABLE }]);
+  server.use(
+    http.delete(`${URL}/:id`, () =>
+      HttpResponse.json(
+        { message: "No se puede eliminar a un usuario con historial; solo desactivarlo" },
+        { status: 422 },
+      ),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  const panel = await abrirPanelDeMaria(user);
+  await user.click(within(panel).getByRole("button", { name: /^eliminar usuario$/i }));
+  const confirmacion = await screen.findByRole("alertdialog");
+  await user.click(within(confirmacion).getByRole("button", { name: /^eliminar$/i }));
+
+  expect(
+    await within(confirmacion).findByText(/no se puede eliminar a un usuario con historial/i),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+  expect(screen.getByRole("row", { name: /maría pérez/i, hidden: true })).toBeInTheDocument();
 });

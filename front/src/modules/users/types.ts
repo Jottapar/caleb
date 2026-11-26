@@ -17,6 +17,9 @@ export type User = {
   email: string;
   rol: UserRole;
   activo: boolean;
+  // Si figura como autor en alguna tabla con auditoría. Lo calcula el backend al listar; crear y
+  // editar no lo devuelven.
+  tiene_historial: boolean;
 };
 
 // Lo que se manda a PATCH /users/{id} (UserUpdate en el backend). Todo es opcional: lo que no se

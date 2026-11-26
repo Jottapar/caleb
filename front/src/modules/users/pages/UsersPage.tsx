@@ -73,6 +73,7 @@ export function UsersPage() {
         <EditUserDrawer
           user={editingUser}
           onSaved={(user) => setNotice(`Usuario actualizado: ${user.nombre}.`)}
+          onDeleted={(user) => setNotice(`Usuario eliminado: ${user.nombre}.`)}
           onClose={() => setEditingUserId(null)}
         />
       )}
