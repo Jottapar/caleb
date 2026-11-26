@@ -709,3 +709,73 @@ def test_delete_user_from_other_company_returns_404(logged_in_client, session):
 
     assert response.status_code == 404
     assert session.exec(select(User).where(User.id == ana.id)).first() is not None
+
+
+PASSWORD_URL = f"{URL}/me/password"
+
+
+def _change_password(logged_in_client, current, new):
+    return logged_in_client.post(
+        PASSWORD_URL,
+        json={"current_password": current, "new_password": new},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+
+def test_change_my_password_with_correct_current_and_valid_new_returns_204_and_login_uses_the_new(
+    logged_in_client,
+):
+    response = _change_password(logged_in_client, ADMIN_PASSWORD, "clave-nueva-123")
+
+    assert response.status_code == 204
+    assert _login(logged_in_client, "johan@example.com", "clave-nueva-123").status_code == 200
+    assert _login(logged_in_client, "johan@example.com", ADMIN_PASSWORD).status_code == 401
+
+
+def test_change_my_password_with_wrong_current_returns_422_and_keeps_the_old(logged_in_client):
+    response = _change_password(logged_in_client, "no-es-mi-clave", "clave-nueva-123")
+
+    assert response.status_code == 422
+    assert response.json()["message"] == "La contraseña actual no es correcta"
+    assert _login(logged_in_client, "johan@example.com", ADMIN_PASSWORD).status_code == 200
+    assert _login(logged_in_client, "johan@example.com", "clave-nueva-123").status_code == 401
+
+
+def test_change_my_password_with_new_of_7_characters_returns_422_and_8_is_accepted(
+    logged_in_client,
+):
+    corta = _change_password(logged_in_client, ADMIN_PASSWORD, "1234567")
+
+    assert corta.status_code == 422
+    assert _login(logged_in_client, "johan@example.com", ADMIN_PASSWORD).status_code == 200
+
+    assert _change_password(logged_in_client, ADMIN_PASSWORD, "12345678").status_code == 204
+
+
+def test_change_my_password_with_new_equal_to_current_returns_422(logged_in_client):
+    response = _change_password(logged_in_client, ADMIN_PASSWORD, ADMIN_PASSWORD)
+
+    assert response.status_code == 422
+    assert response.json()["message"] == "La contraseña nueva debe ser distinta de la actual"
+
+
+def test_change_my_password_does_not_close_my_session(logged_in_client):
+    _change_password(logged_in_client, ADMIN_PASSWORD, "clave-nueva-123")
+
+    assert logged_in_client.get(URL).status_code == 200
+
+
+def test_change_my_password_only_changes_mine(logged_in_client):
+    _create(logged_in_client)
+
+    _change_password(logged_in_client, ADMIN_PASSWORD, "clave-nueva-123")
+
+    assert _login(logged_in_client, "maria@example.com", DATOS["password"]).status_code == 200
+
+
+def test_change_my_password_without_login_returns_401(client):
+    response = client.post(
+        PASSWORD_URL, json={"current_password": "x", "new_password": "clave-nueva-123"}
+    )
+
+    assert response.status_code == 401

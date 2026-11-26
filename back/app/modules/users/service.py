@@ -75,14 +75,19 @@ def _validate_user_fields(nombre: str, email: str, rol: str) -> None:
         raise BusinessError("El rol debe ser Admin, Usuario o Contador")
 
 
+def _validate_password_length(password: str) -> None:
+    """Rechaza con BusinessError (422) una contraseña de menos de 8 caracteres. Lo comparten crear y cambiarla."""
+    if len(password) < MIN_LARGO_PASSWORD:
+        raise BusinessError(f"La contraseña debe tener al menos {MIN_LARGO_PASSWORD} caracteres")
+
+
 def _validate_new_user(nombre: str, email: str, rol: str, password: str) -> None:
     """Las validaciones de crear: las de los datos y la de la contraseña inicial.
 
     La contraseña no se limpia: los espacios de los lados cuentan como parte de ella.
     """
     _validate_user_fields(nombre, email, rol)
-    if len(password) < MIN_LARGO_PASSWORD:
-        raise BusinessError(f"La contraseña debe tener al menos {MIN_LARGO_PASSWORD} caracteres")
+    _validate_password_length(password)
 
 
 def create_user(session: Session, empresa_id: int, data: UserCreate) -> UserRead:
@@ -270,6 +275,22 @@ def delete_user(session: Session, empresa_id: int, user_id: int) -> None:
     session.delete(link)
     session.flush()  # el vínculo sale antes que el usuario
     session.delete(user)
+    session.commit()
+
+
+def change_password(session: Session, user_id: int, current_password: str, new_password: str) -> None:
+    """Cambia la contraseña del usuario `user_id` (quien hace la petición) por `new_password`.
+
+    Recibe el id y no el objeto: el `User` de la sesión de autenticación vive en otra sesión de
+    base de datos, y cambiarlo ahí no se guardaría con el `commit` de esta.
+    """
+    user = session.get(User, user_id)
+    if not password_hash.verify(current_password, user.password_hash):
+        raise BusinessError("La contraseña actual no es correcta")
+    _validate_password_length(new_password)
+    if new_password == current_password:
+        raise BusinessError("La contraseña nueva debe ser distinta de la actual")
+    user.password_hash = password_hash.hash(new_password)
     session.commit()
 
 

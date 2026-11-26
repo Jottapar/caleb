@@ -40,3 +40,10 @@ class UserListRead(UserRead):
     """
 
     tiene_historial: bool
+
+
+class PasswordChange(SQLModel):
+    """Lo que manda un usuario para cambiar su propia contraseña. La confirmación la valida el front."""
+
+    current_password: str
+    new_password: str

@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, status
 
 from app.core.database import SessionDep
 from app.core.security import auth
-from app.modules.auth.dependencies import CurrentCompanyId
+from app.modules.auth.dependencies import CurrentCompanyId, CurrentUser
 from app.modules.users import service
-from app.modules.users.schemas import UserCreate, UserListRead, UserRead, UserUpdate
+from app.modules.users.schemas import PasswordChange, UserCreate, UserListRead, UserRead, UserUpdate
 
 router = APIRouter(
     prefix="/users",
@@ -33,3 +33,9 @@ def update_user(user_id: int, data: UserUpdate, session: SessionDep, empresa_id:
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(user_id: int, session: SessionDep, empresa_id: CurrentCompanyId):
     service.delete_user(session, empresa_id, user_id)
+
+
+@router.post("/me/password", status_code=status.HTTP_204_NO_CONTENT)
+def change_my_password(data: PasswordChange, session: SessionDep, current_user: CurrentUser):
+    # El usuario sale de la sesión, nunca de la URL ni del cuerpo: nadie cambia la contraseña de otro.
+    service.change_password(session, current_user.id, data.current_password, data.new_password)
