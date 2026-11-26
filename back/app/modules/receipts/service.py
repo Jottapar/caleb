@@ -20,6 +20,7 @@ from app.modules.receipts.schemas import (
 from app.modules.taxes.models import Tax
 from app.modules.technical_sheets.models import TechnicalSheet, TechnicalSheetItemLine
 from app.modules.third_parties.models import ThirdParty
+from app.modules.third_parties.service import active_third_parties
 
 TERCEROS_VALIDOS_EN_RECIBO = {"cliente"}
 CONDICIONES_VALIDAS = {"contado", "credito"}
@@ -31,7 +32,9 @@ def _round(monto: Decimal) -> Decimal:
 
 def _validate_third_party(session: Session, tercero_id: int, empresa_id: int) -> None:
     tercero = session.exec(
-        select(ThirdParty).where(ThirdParty.id == tercero_id, ThirdParty.empresa_id == empresa_id)
+        active_third_parties().where(
+            ThirdParty.id == tercero_id, ThirdParty.empresa_id == empresa_id
+        )
     ).first()
     if not tercero:
         raise NotFoundError("Tercero", tercero_id)
@@ -246,8 +249,11 @@ def _with_lines(session: Session, receipt: Receipt) -> ReceiptRead:
     lineas_fichas = session.exec(
         select(ReceiptSheetLine).where(ReceiptSheetLine.recibo_id == receipt.id)
     ).all()
+    # `session.get` lee al cliente sin el filtro de eliminados: un recibo viejo conserva el nombre.
+    cliente = session.get(ThirdParty, receipt.tercero_id)
     return ReceiptRead(
         **receipt.model_dump(),
+        cliente_nombre=cliente.nombre,
         saldo=get_balance(session, receipt),
         lineas=list(lineas),
         lineas_fichas=list(lineas_fichas),

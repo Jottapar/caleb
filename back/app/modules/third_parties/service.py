@@ -1,6 +1,7 @@
 from sqlmodel import Session, select
 
 from app.core.errors import BusinessError, NotFoundError
+from app.core.mixins import utc_now
 from app.core.validators import FORMATO_CORREO, SOLO_DIGITOS
 from app.modules.banks import service as banks_service
 from app.modules.third_parties.models import ThirdParty, ThirdPartyBankAccount
@@ -82,15 +83,24 @@ def create_third_party(session: Session, empresa_id: int, data: ThirdPartyCreate
     return third_party
 
 
+def active_third_parties():
+    """El `select` de terceros que NO estan eliminados. Es el unico filtro de borrado logico:
+    listar, buscar por id y validar un tercero nuevo en un recibo parten de aqui, asi ninguna
+    consulta se acuerda del filtro a mano. El historial (recibos) no lo usa: sigue viendo todo."""
+    return select(ThirdParty).where(ThirdParty.deleted_at.is_(None))
+
+
 def list_third_parties(session: Session, empresa_id: int) -> list[ThirdParty]:
-    return list(session.exec(select(ThirdParty).where(ThirdParty.empresa_id == empresa_id)).all())
+    return list(
+        session.exec(active_third_parties().where(ThirdParty.empresa_id == empresa_id)).all()
+    )
 
 
 def get_by_id(session: Session, third_party_id: int, empresa_id: int) -> ThirdParty:
     # Filtra por empresa_id en la misma consulta: un tercero de otra empresa
     # da "no encontrado", nunca "prohibido" (no revela que existe).
     third_party = session.exec(
-        select(ThirdParty).where(
+        active_third_parties().where(
             ThirdParty.id == third_party_id, ThirdParty.empresa_id == empresa_id
         )
     ).first()
@@ -143,6 +153,7 @@ def update_third_party(
 
 def delete_third_party(session: Session, third_party_id: int, empresa_id: int) -> None:
     third_party = get_by_id(session, third_party_id, empresa_id)
-    # Sus cuentas bancarias se borran con el (cascade en el modelo).
-    session.delete(third_party)
+    # Borrado logico: la fila se queda (los recibos la siguen apuntando) y solo se marca la fecha.
+    third_party.deleted_at = utc_now()
+    session.add(third_party)
     session.commit()

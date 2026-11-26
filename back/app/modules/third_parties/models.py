@@ -1,5 +1,7 @@
+from datetime import datetime
 from typing import TYPE_CHECKING
 
+from sqlalchemy import DateTime
 from sqlmodel import Field, Relationship
 
 from app.core.mixins import AuditMixin
@@ -23,6 +25,10 @@ class ThirdParty(AuditMixin, table=True):
     telefono: str = Field(max_length=30, default="")
     direccion: str = Field(max_length=200, default="")
     activo: bool = Field(default=True)
+    # Borrado logico (historia 2f): vacios mientras el tercero no este eliminado. Son las unicas
+    # columnas que admiten vacio en el proyecto.
+    deleted_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    deleted_by_id: int | None = Field(default=None, foreign_key="usuarios.id")
 
     # La tabla admite varias cuentas, pero en el MVP el servicio deja una sola.
     # delete-orphan: al quitar una cuenta de esta lista, se borra su fila; y al

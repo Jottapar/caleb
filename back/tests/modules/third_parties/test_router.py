@@ -554,6 +554,42 @@ def test_delete_third_party_from_other_company_returns_404(logged_in_client, ses
     assert response.status_code == 404
 
 
+def test_update_deleted_third_party_returns_404(logged_in_client):
+    created = _create(logged_in_client)
+    logged_in_client.delete(f"{URL}/{created['id']}", headers=_csrf_headers(logged_in_client))
+
+    response = logged_in_client.patch(
+        f"{URL}/{created['id']}",
+        json={"nombre": "Otro nombre"},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 404
+
+
+def test_delete_already_deleted_third_party_returns_404(logged_in_client):
+    created = _create(logged_in_client)
+    logged_in_client.delete(f"{URL}/{created['id']}", headers=_csrf_headers(logged_in_client))
+
+    response = logged_in_client.delete(
+        f"{URL}/{created['id']}", headers=_csrf_headers(logged_in_client)
+    )
+
+    assert response.status_code == 404
+
+
+def test_deleting_a_third_party_saves_deleted_at_and_the_user_as_deleted_by(
+    logged_in_client, session
+):
+    created = _create(logged_in_client)
+
+    logged_in_client.delete(f"{URL}/{created['id']}", headers=_csrf_headers(logged_in_client))
+
+    fila = _third_party_row(session, created["id"])
+    assert fila.deleted_at is not None
+    assert fila.deleted_by_id == _user_id(session, EMAIL)
+
+
 CUENTA = {"tipo_cuenta": "ahorros", "numero_cuenta": "0123456789"}
 
 

@@ -47,6 +47,7 @@ class ReceiptSheetLineRead(SQLModel):
 class ReceiptRead(SQLModel):
     id: int
     tercero_id: int
+    cliente_nombre: str
     numero: str
     fecha: date
     condicion: str

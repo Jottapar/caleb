@@ -58,6 +58,10 @@ def fill_audit(session, flush_context, instances):
             row.updated_at = utc_now()
             if isinstance(row, AuditMixin):
                 row.updated_by_id = _author_id(session)
+            # Borrado logico: si en esta transaccion `deleted_at` paso de vacio a tener fecha,
+            # quien elimina es el autor. Solo las tablas con borrado logico tienen esa columna.
+            if hasattr(row, "deleted_at") and row.deleted_at is not None and row.deleted_by_id is None:
+                row.deleted_by_id = _author_id(session)
 
 
 @event.listens_for(Session, "after_commit")
