@@ -117,3 +117,24 @@ def test_login_with_nonexistent_email_returns_same_401_generic_message(client):
 
     assert response.status_code == 401
     assert response.json()["message"] == "Correo o contraseña incorrectos"
+
+
+def test_me_of_a_user_without_company_returns_200_with_empty_role(client, session):
+    from app.core.security import password_hash
+
+    # Un usuario que no pertenece a ninguna empresa (como Caleb, pero activo para poder entrar).
+    session.add(
+        User(
+            nombre="Sin empresa",
+            email="sin@example.com",
+            password_hash=password_hash.hash(PASSWORD),
+        )
+    )
+    session.commit()
+    client.post("/api/v1/auth/login", json={"email": "sin@example.com", "password": PASSWORD})
+
+    response = client.get("/api/v1/auth/me")
+
+    assert response.status_code == 200
+    assert response.json()["rol"] == ""
+    assert response.json()["company_name"] == ""

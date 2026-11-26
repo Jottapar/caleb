@@ -303,7 +303,9 @@ def reset_user_password(
     hasta la historia 16e, que la reemplaza por la regla general.
     """
     actor_rol = session.exec(
-        select(UserCompany.rol).where(UserCompany.usuario_id == actor_id)
+        select(UserCompany.rol).where(
+            UserCompany.usuario_id == actor_id, UserCompany.empresa_id == empresa_id
+        )
     ).first()
     if actor_rol != "admin":
         raise ForbiddenError("Solo un Admin puede restablecer la contraseña de otro usuario")
