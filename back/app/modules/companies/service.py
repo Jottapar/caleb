@@ -1,3 +1,5 @@
+import re
+import unicodedata
 from io import BytesIO
 from uuid import uuid4
 
@@ -134,6 +136,20 @@ def _resize_logo(contenido: bytes) -> tuple[bytes, str]:
     return salida.getvalue(), formato
 
 
+def _slug(nombre: str) -> str:
+    """Convierte un nombre en algo seguro para una carpeta: 'Panadería La Esquina' -> 'panaderia-la-esquina'.
+
+    Recibe el nombre de la empresa (str) y devuelve un str en minusculas, sin tildes, con guiones en
+    vez de espacios y sin simbolos. Se corta a 60 caracteres para que la ruta quepa en `logo_ruta`.
+    Si el nombre no deja nada (solo simbolos), devuelve 'empresa'.
+    """
+    # NFKD separa la letra de su tilde ('á' -> 'a' + tilde); ascii/ignore descarta las tildes sueltas
+    sin_tildes = unicodedata.normalize("NFKD", nombre).encode("ascii", "ignore").decode()
+    # Todo lo que no sea letra o numero (espacios, '/', '&'...) se vuelve un solo guion
+    slug = re.sub(r"[^a-z0-9]+", "-", sin_tildes.lower()).strip("-")
+    return slug[:60].strip("-") or "empresa"
+
+
 def _delete_unused_file(storage: Storage, ruta: str) -> None:
     """Borra un archivo que ya no usa ninguna empresa, sin hacer fallar la peticion si R2 no responde.
 
@@ -163,7 +179,8 @@ def save_logo(
     company = get_company(session, empresa_id)
     imagen, formato = _resize_logo(contenido)
     extension, tipo = FORMATOS_LOGO[formato]
-    ruta = f"empresas/{empresa_id}/logo-{uuid4().hex}.{extension}"
+    carpeta = f"{_slug(company.nombre)}-{empresa_id}"  # el id evita choques entre empresas de igual nombre
+    ruta = f"empresas/{carpeta}/logo/{uuid4().hex}.{extension}"
     storage.save(ruta, imagen, tipo)
     ruta_anterior = company.logo_ruta
     company.logo_ruta = ruta
