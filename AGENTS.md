@@ -105,7 +105,9 @@ Cada una tiene su motivo escrito en `06. Decisiones.md`; aquí va el resumen eje
   un recibo o una compra (total menos la suma de sus pagos) y el flujo de caja semanal. Un saldo
   guardado se descuadra; uno calculado siempre cuadra.
 - **Ninguna columna queda vacía.** Donde no hay dato va un default (`''` o `0`). Por eso las líneas
-  de recibo están en dos tablas, no en una con columnas nulas.
+  de recibo están en dos tablas, no en una con columnas nulas. **Única excepción, por ahora:** las
+  dos columnas del borrado lógico, `deleted_at` y `deleted_by_id`, que son las únicas que pueden
+  quedar en `NULL` (mientras el registro no esté eliminado).
 - **Sin enums y sin índices por ahora.** Los valores válidos van en un comentario de la columna y
   **los valida el backend**: roles, tipos, estados, condiciones, orígenes, y la unicidad de códigos
   y números por empresa.
