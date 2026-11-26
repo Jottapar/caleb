@@ -268,8 +268,8 @@ export function ThirdPartiesPage({ tipo }: Props) {
               </Dialog.Header>
               <Dialog.Body>
                 <Text>
-                  ¿Seguro que quieres eliminar a {deletingThirdParty.nombre}? Esta acción no se
-                  puede deshacer.
+                  ¿Seguro que quieres eliminar a {deletingThirdParty.nombre}? Dejará de verse en
+                  la lista, pero podrás restaurarlo desde «{textos.restaurar}».
                 </Text>
                 {getErrorMessage(
                   deleteThirdParty.isError,

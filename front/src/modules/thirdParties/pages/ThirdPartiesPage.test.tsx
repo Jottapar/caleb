@@ -793,3 +793,26 @@ it("muestra un error cuando no se puede cargar la lista de clientes soft elimina
     await within(dialog).findByText(/no pudimos cargar tus clientes soft eliminados/i),
   ).toBeInTheDocument();
 });
+
+it("el diálogo de eliminar un cliente dice que se puede restaurar desde «Restaurar clientes»", async () => {
+  server.use(http.get(URL, () => HttpResponse.json([ANA])));
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: /^eliminar$/i }));
+
+  const dialog = await screen.findByRole("alertdialog");
+  expect(dialog).toHaveTextContent(/podrás restaurarlo desde «Restaurar clientes»/i);
+  expect(dialog).not.toHaveTextContent(/no se puede deshacer/i);
+});
+
+it("el diálogo de eliminar un proveedor dice que se puede restaurar desde «Restaurar proveedores»", async () => {
+  server.use(http.get(URL, () => HttpResponse.json([{ ...ANA, tipo: "proveedor" }])));
+  const user = userEvent.setup();
+
+  renderPage("proveedor");
+  await user.click(await screen.findByRole("button", { name: /^eliminar$/i }));
+
+  const dialog = await screen.findByRole("alertdialog");
+  expect(dialog).toHaveTextContent(/podrás restaurarlo desde «Restaurar proveedores»/i);
+});
