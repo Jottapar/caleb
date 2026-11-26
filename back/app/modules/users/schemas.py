@@ -30,3 +30,13 @@ class UserRead(SQLModel):
     email: str
     rol: str
     activo: bool
+
+
+class UserListRead(UserRead):
+    """Un usuario en la lista: lo mismo que `UserRead` y si tiene historial.
+
+    `tiene_historial` se calcula al listar, no se guarda. Solo la lista lo trae: crear y editar
+    devuelven `UserRead`.
+    """
+
+    tiene_historial: bool

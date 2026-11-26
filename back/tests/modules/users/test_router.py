@@ -583,3 +583,129 @@ def test_update_user_without_login_returns_401(client):
     response = client.patch(f"{URL}/1", json={"nombre": "Nadie"})
 
     assert response.status_code == 401
+
+
+def _tiene_historial_por_correo(logged_in_client) -> dict:
+    """Lo que dice la lista de usuarios sobre el historial de cada uno, por correo."""
+    return {u["email"]: u["tiene_historial"] for u in logged_in_client.get(URL).json()}
+
+
+def test_list_users_marks_a_user_without_activity_as_not_having_history(logged_in_client):
+    _create(logged_in_client)
+
+    assert _tiene_historial_por_correo(logged_in_client)["maria@example.com"] is False
+
+
+def _create_third_party(client, **cambios):
+    datos = {
+        "tipo": "cliente",
+        "nombre": "Carlos",
+        "documento": "123",
+        "email": "carlos@example.com",
+        "telefono": "3001234567",
+        "direccion": "Calle 1 # 2-3",
+        **cambios,
+    }
+    response = client.post("/api/v1/third-parties", json=datos, headers=_csrf_headers(client))
+    assert response.status_code == 201, response.json()
+    return response.json()
+
+
+def test_list_users_marks_a_user_who_created_data_as_having_history(
+    logged_in_client, log_in_as_other_admin
+):
+    log_in_as_other_admin(logged_in_client)
+    _create_third_party(logged_in_client)
+
+    assert _tiene_historial_por_correo(logged_in_client)["maria@example.com"] is True
+
+
+def test_list_users_marks_a_user_who_only_edited_as_having_history(
+    logged_in_client, log_in_as_other_admin
+):
+    # Johan crea al cliente; María solo lo edita, no crea nada.
+    carlos = _create_third_party(logged_in_client)
+    log_in_as_other_admin(logged_in_client)
+    response = logged_in_client.patch(
+        f"/api/v1/third-parties/{carlos['id']}",
+        json={"nombre": "Carlos Gómez"},
+        headers=_csrf_headers(logged_in_client),
+    )
+    assert response.status_code == 200, response.json()
+
+    assert _tiene_historial_por_correo(logged_in_client)["maria@example.com"] is True
+
+
+def test_list_users_marks_an_admin_who_created_a_user_as_having_history(logged_in_client):
+    _create(logged_in_client)
+
+    tiene = _tiene_historial_por_correo(logged_in_client)
+    assert tiene["johan@example.com"] is True
+    assert tiene["maria@example.com"] is False
+
+
+def _delete(logged_in_client, user_id):
+    return logged_in_client.delete(f"{URL}/{user_id}", headers=_csrf_headers(logged_in_client))
+
+
+def test_delete_inactive_user_without_history_returns_204_and_removes_it(logged_in_client, session):
+    maria = _create(logged_in_client).json()
+    _patch(logged_in_client, maria["id"], activo=False)
+
+    response = _delete(logged_in_client, maria["id"])
+
+    assert response.status_code == 204
+    assert session.exec(select(User).where(User.id == maria["id"])).first() is None
+    assert session.exec(select(UserCompany).where(UserCompany.usuario_id == maria["id"])).first() is None
+
+
+def test_delete_user_frees_the_email_to_create_another(logged_in_client):
+    maria = _create(logged_in_client).json()
+    _patch(logged_in_client, maria["id"], activo=False)
+    _delete(logged_in_client, maria["id"])
+
+    assert _create(logged_in_client).status_code == 201
+
+
+def test_delete_active_user_returns_422_and_keeps_it(logged_in_client, session):
+    maria = _create(logged_in_client).json()
+
+    response = _delete(logged_in_client, maria["id"])
+
+    assert response.status_code == 422
+    assert response.json()["message"] == "Primero desactiva al usuario para poder eliminarlo"
+    assert session.exec(select(User).where(User.id == maria["id"])).one()
+
+
+def test_delete_inactive_user_with_history_returns_422_and_keeps_it(logged_in_client, session):
+    maria = _create(logged_in_client).json()
+    # María entra y crea un cliente: desde ahí tiene historial. Luego Johan la desactiva.
+    _login(logged_in_client, "maria@example.com", DATOS["password"])
+    _create_third_party(logged_in_client)
+    _login(logged_in_client, "johan@example.com", ADMIN_PASSWORD)
+    _patch(logged_in_client, maria["id"], activo=False)
+
+    response = _delete(logged_in_client, maria["id"])
+
+    assert response.status_code == 422
+    assert response.json()["message"] == "No se puede eliminar a un usuario con historial; solo desactivarlo"
+    assert session.exec(select(User).where(User.id == maria["id"])).one()
+
+
+def test_delete_user_from_other_company_returns_404(logged_in_client, session):
+    service.create_company_with_owner(
+        session,
+        company_name="Café Sol",
+        owner_name="Ana",
+        email="ana@cafesol.com",
+        password="clave-de-ana-123",
+    )
+    ana = session.exec(select(User).where(User.email == "ana@cafesol.com")).one()
+    # Inactiva y sin historial: lo único que debe frenar al Admin es que es de otra empresa.
+    ana.activo = False
+    session.commit()
+
+    response = _delete(logged_in_client, ana.id)
+
+    assert response.status_code == 404
+    assert session.exec(select(User).where(User.id == ana.id)).first() is not None

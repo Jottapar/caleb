@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
 
 from app.core.database import SessionDep
 from app.core.security import auth
 from app.modules.auth.dependencies import CurrentCompanyId
 from app.modules.users import service
-from app.modules.users.schemas import UserCreate, UserRead, UserUpdate
+from app.modules.users.schemas import UserCreate, UserListRead, UserRead, UserUpdate
 
 router = APIRouter(
     prefix="/users",
@@ -13,7 +13,7 @@ router = APIRouter(
 )
 
 
-@router.get("", response_model=list[UserRead])
+@router.get("", response_model=list[UserListRead])
 def list_users(session: SessionDep, empresa_id: CurrentCompanyId):
     # Solo los de la empresa de quien consulta; no hay forma de pedir los de otra.
     return service.list_users(session, empresa_id)
@@ -28,3 +28,8 @@ def create_user(data: UserCreate, session: SessionDep, empresa_id: CurrentCompan
 @router.patch("/{user_id}", response_model=UserRead)
 def update_user(user_id: int, data: UserUpdate, session: SessionDep, empresa_id: CurrentCompanyId):
     return service.update_user(session, empresa_id, user_id, data)
+
+
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(user_id: int, session: SessionDep, empresa_id: CurrentCompanyId):
+    service.delete_user(session, empresa_id, user_id)

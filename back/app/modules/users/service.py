@@ -3,7 +3,7 @@ import unicodedata
 from sqlalchemy import func
 from psycopg.errors import UniqueViolation
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, select
+from sqlmodel import Session, SQLModel, select
 
 from app.core.errors import AlreadyExistsError, BusinessError, NotFoundError
 from app.core.security import password_hash
@@ -11,7 +11,7 @@ from app.core.validators import FORMATO_CORREO
 from app.modules.companies.models import Company
 from app.modules.taxes import service as taxes_service
 from app.modules.users.models import User, UserCompany
-from app.modules.users.schemas import UserCreate, UserRead, UserUpdate
+from app.modules.users.schemas import UserCreate, UserListRead, UserRead, UserUpdate
 
 
 def normalize_email(email: str) -> str:
@@ -139,7 +139,19 @@ def _name_sort_key(nombre: str) -> str:
     return clave
 
 
-def list_users(session: Session, empresa_id: int) -> list[UserRead]:
+def _ids_with_history(session: Session) -> set[int]:
+    """Los ids de los usuarios que figuran como autor en alguna tabla con auditoría."""
+    ids: set[int] = set()
+    # Se recorren las tablas registradas y se toman las que tienen autor: una tabla nueva con
+    # `AuditMixin` cuenta sola, sin que nadie la agregue a una lista.
+    for table in SQLModel.metadata.tables.values():
+        if "created_by_id" in table.c:
+            for author in (table.c.created_by_id, table.c.updated_by_id):
+                ids.update(session.exec(select(author).distinct()).all())
+    return ids
+
+
+def list_users(session: Session, empresa_id: int) -> list[UserListRead]:
     """Todos los usuarios de la empresa `empresa_id`, activos e inactivos, con su rol en ella.
 
     El rol sale de `usuarios_empresas`, filtrado por la empresa. Nunca incluye el hash.
@@ -152,8 +164,16 @@ def list_users(session: Session, empresa_id: int) -> list[UserRead]:
     # El orden se hace aquí y no con ORDER BY: en SQL lo decide la collation de la base, que
     # cambia de un Postgres a otro (en Neon, «C.UTF-8», las tildes y mayúsculas quedan mal).
     rows = sorted(rows, key=lambda row: (_name_sort_key(row[0].nombre), row[0].id))
+    con_historial = _ids_with_history(session)
     return [
-        UserRead(id=user.id, nombre=user.nombre, email=user.email, rol=rol, activo=user.activo)
+        UserListRead(
+            id=user.id,
+            nombre=user.nombre,
+            email=user.email,
+            rol=rol,
+            activo=user.activo,
+            tiene_historial=user.id in con_historial,
+        )
         for user, rol in rows
     ]
 
@@ -227,6 +247,30 @@ def update_user(session: Session, empresa_id: int, user_id: int, data: UserUpdat
     return UserRead(
         id=user.id, nombre=user.nombre, email=user.email, rol=link.rol, activo=user.activo
     )
+
+
+def delete_user(session: Session, empresa_id: int, user_id: int) -> None:
+    """Elimina de verdad a un usuario de la empresa `empresa_id`: su vínculo y su fila.
+
+    Borra primero el vínculo en `usuarios_empresas`, que apunta al usuario por llave foránea.
+    """
+    row = session.exec(
+        select(User, UserCompany)
+        .join(UserCompany, UserCompany.usuario_id == User.id)
+        .where(User.id == user_id, UserCompany.empresa_id == empresa_id)
+    ).first()
+    if not row:
+        raise NotFoundError("Usuario", user_id)
+    user, link = row
+    if user.activo:
+        raise BusinessError("Primero desactiva al usuario para poder eliminarlo")
+    if user.id in _ids_with_history(session):
+        raise BusinessError("No se puede eliminar a un usuario con historial; solo desactivarlo")
+
+    session.delete(link)
+    session.flush()  # el vínculo sale antes que el usuario
+    session.delete(user)
+    session.commit()
 
 
 def reset_password(session: Session, email: str, new_password: str) -> None:
