@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 
@@ -690,4 +690,106 @@ it("avisa cuando ningun tercero coincide con el filtro", async () => {
   expect(screen.getByText(/ningún cliente coincide con la búsqueda/i)).toBeInTheDocument();
   // El buscador sigue a la vista para poder corregir lo que se escribio.
   expect(screen.getByLabelText(/buscar cliente/i)).toHaveValue("zzz");
+});
+
+// ---------- soft eliminados ----------
+
+const DELETED_URL = "/api/v1/third-parties/deleted";
+
+const CLIENTE_SOFT_ELIMINADO = {
+  id: 7,
+  tipo: "cliente",
+  nombre: "Carlos Soto",
+  documento: "555",
+  email: "carlos@example.com",
+  telefono: "3109998888",
+  direccion: "Calle 9 # 8-7",
+  activo: true,
+  cuenta_bancaria: null,
+};
+
+const PROVEEDOR_SOFT_ELIMINADO = {
+  ...CLIENTE_SOFT_ELIMINADO,
+  id: 8,
+  tipo: "proveedor",
+  nombre: "Luis Proveedor",
+};
+
+it("muestra en «Restaurar clientes» solo los clientes soft eliminados", async () => {
+  server.use(
+    http.get(URL, () => HttpResponse.json([])),
+    http.get(DELETED_URL, () =>
+      HttpResponse.json([CLIENTE_SOFT_ELIMINADO, PROVEEDOR_SOFT_ELIMINADO]),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Restaurar clientes" }));
+
+  const dialog = await screen.findByRole("dialog", { name: /clientes soft eliminados/i });
+  expect(await within(dialog).findByText("Carlos Soto")).toBeInTheDocument();
+  expect(within(dialog).getByText("555")).toBeInTheDocument();
+  expect(within(dialog).getByText("carlos@example.com")).toBeInTheDocument();
+  expect(within(dialog).getByText("3109998888")).toBeInTheDocument();
+  expect(within(dialog).queryByText("Luis Proveedor")).not.toBeInTheDocument();
+});
+
+it("al restaurar un cliente sale del diálogo y vuelve a aparecer en la lista de Clientes", async () => {
+  let restaurado = false;
+  server.use(
+    http.get(URL, () =>
+      HttpResponse.json(restaurado ? [{ ...CLIENTE_SOFT_ELIMINADO }] : []),
+    ),
+    http.get(DELETED_URL, () =>
+      HttpResponse.json(restaurado ? [] : [CLIENTE_SOFT_ELIMINADO]),
+    ),
+    http.post(`${URL}/7/restore`, () => {
+      restaurado = true;
+      return HttpResponse.json(CLIENTE_SOFT_ELIMINADO);
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Restaurar clientes" }));
+  const dialog = await screen.findByRole("dialog", { name: /clientes soft eliminados/i });
+  await user.click(await within(dialog).findByRole("button", { name: "Restaurar" }));
+
+  await waitFor(() => expect(within(dialog).queryByText("Carlos Soto")).not.toBeInTheDocument());
+  await user.click(within(dialog).getByRole("button", { name: /cerrar/i }));
+  expect(await screen.findByText("Carlos Soto")).toBeInTheDocument();
+});
+
+it("muestra un mensaje cuando no hay clientes soft eliminados", async () => {
+  server.use(
+    http.get(URL, () => HttpResponse.json([])),
+    // Hay un proveedor soft eliminado, pero ningún cliente: para esta pantalla no hay nada.
+    http.get(DELETED_URL, () => HttpResponse.json([PROVEEDOR_SOFT_ELIMINADO])),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Restaurar clientes" }));
+
+  const dialog = await screen.findByRole("dialog", { name: /clientes soft eliminados/i });
+  expect(
+    await within(dialog).findByText(/no tienes clientes soft eliminados/i),
+  ).toBeInTheDocument();
+});
+
+it("muestra un error cuando no se puede cargar la lista de clientes soft eliminados", async () => {
+  server.use(
+    http.get(URL, () => HttpResponse.json([])),
+    http.get(DELETED_URL, () => HttpResponse.json({ message: "Error" }, { status: 500 })),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  await user.click(await screen.findByRole("button", { name: "Restaurar clientes" }));
+
+  const dialog = await screen.findByRole("dialog", { name: /clientes soft eliminados/i });
+  expect(
+    await within(dialog).findByText(/no pudimos cargar tus clientes soft eliminados/i),
+  ).toBeInTheDocument();
 });

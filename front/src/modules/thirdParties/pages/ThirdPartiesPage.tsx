@@ -5,6 +5,7 @@ import { useState } from "react";
 import { TablePagination } from "../../../shared/components/ui/TablePagination";
 import { normalizeText } from "../../../shared/lib/normalizeText";
 import { CreateThirdPartyDialog } from "../components/CreateThirdPartyDialog";
+import { RestoreThirdPartiesDialog } from "../components/RestoreThirdPartiesDialog";
 import { ThirdPartyFilters } from "../components/ThirdPartyFilters";
 import { ThirdPartyForm } from "../components/ThirdPartyForm";
 import { ThirdPartyTable } from "../components/ThirdPartyTable";
@@ -19,6 +20,10 @@ import type { ThirdParty, ThirdPartyCreate, ThirdPartyType } from "../types";
 type Textos = {
   titulo: string;
   crear: string;
+  restaurar: string;
+  restaurarTitulo: string;
+  sinSoftEliminados: string;
+  errorSoftEliminados: string;
   editar: string;
   buscar: string;
   porPagina: string;
@@ -31,6 +36,10 @@ const TEXTOS: Record<ThirdPartyType, Textos> = {
   cliente: {
     titulo: "Clientes",
     crear: "Crear cliente",
+    restaurar: "Restaurar clientes",
+    restaurarTitulo: "Clientes soft eliminados",
+    sinSoftEliminados: "No tienes clientes soft eliminados.",
+    errorSoftEliminados: "No pudimos cargar tus clientes soft eliminados. Intenta de nuevo.",
     editar: "Editar cliente",
     buscar: "Buscar cliente",
     porPagina: "Clientes por página",
@@ -41,6 +50,10 @@ const TEXTOS: Record<ThirdPartyType, Textos> = {
   proveedor: {
     titulo: "Proveedores",
     crear: "Crear proveedor",
+    restaurar: "Restaurar proveedores",
+    restaurarTitulo: "Proveedores soft eliminados",
+    sinSoftEliminados: "No tienes proveedores soft eliminados.",
+    errorSoftEliminados: "No pudimos cargar tus proveedores soft eliminados. Intenta de nuevo.",
     editar: "Editar proveedor",
     buscar: "Buscar proveedor",
     porPagina: "Proveedores por página",
@@ -79,6 +92,7 @@ export function ThirdPartiesPage({ tipo }: Props) {
   const updateThirdParty = useUpdateThirdParty();
   const deleteThirdParty = useDeleteThirdParty();
   const [creating, setCreating] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [editingThirdParty, setEditingThirdParty] = useState<ThirdParty | null>(null);
   const [deletingThirdParty, setDeletingThirdParty] = useState<ThirdParty | null>(null);
   const [page, setPage] = useState(1);
@@ -139,9 +153,14 @@ export function ThirdPartiesPage({ tipo }: Props) {
     <Stack gap="6">
       <HStack justify="space-between">
         <Heading size="xl">{textos.titulo}</Heading>
-        <Button colorPalette="brand" onClick={handleOpenCreate}>
-          {textos.crear}
-        </Button>
+        <HStack>
+          <Button variant="outline" onClick={() => setRestoring(true)}>
+            {textos.restaurar}
+          </Button>
+          <Button colorPalette="brand" onClick={handleOpenCreate}>
+            {textos.crear}
+          </Button>
+        </HStack>
       </HStack>
 
       {thirdParties.isPending && (
@@ -192,6 +211,16 @@ export function ThirdPartiesPage({ tipo }: Props) {
           title={textos.crear}
           tipo={tipo}
           onClose={() => setCreating(false)}
+        />
+      )}
+
+      {restoring && (
+        <RestoreThirdPartiesDialog
+          title={textos.restaurarTitulo}
+          emptyMessage={textos.sinSoftEliminados}
+          errorMessage={textos.errorSoftEliminados}
+          tipo={tipo}
+          onClose={() => setRestoring(false)}
         />
       )}
 
