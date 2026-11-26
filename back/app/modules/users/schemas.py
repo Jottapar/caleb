@@ -47,3 +47,9 @@ class PasswordChange(SQLModel):
 
     current_password: str
     new_password: str
+
+
+class PasswordReset(SQLModel):
+    """Lo que manda el Admin para ponerle una contraseña nueva a otro usuario. No lleva la actual."""
+
+    new_password: str

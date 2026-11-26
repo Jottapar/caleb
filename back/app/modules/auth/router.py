@@ -23,6 +23,8 @@ def get_me(current_user: CurrentUser, session: SessionDep):
     # Una sola consulta: de la misma empresa salen el nombre y la version del logo.
     company = service.get_company(session, current_user.id)
     return MeRead(
+        id=current_user.id,
+        rol=service.get_role(session, current_user.id),
         user_name=current_user.nombre,
         company_name=company.nombre if company else "",
         logo_version=company.logo_ruta if company else "",

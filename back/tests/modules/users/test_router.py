@@ -779,3 +779,82 @@ def test_change_my_password_without_login_returns_401(client):
     )
 
     assert response.status_code == 401
+
+
+def _reset_password(logged_in_client, user_id, new):
+    return logged_in_client.post(
+        f"{URL}/{user_id}/password",
+        json={"new_password": new},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+
+def test_admin_resets_another_users_password_returns_204_and_login_uses_the_new(
+    logged_in_client,
+):
+    maria = _create(logged_in_client).json()
+
+    response = _reset_password(logged_in_client, maria["id"], "clave-nueva-123")
+
+    assert response.status_code == 204
+    assert _login(logged_in_client, "maria@example.com", "clave-nueva-123").status_code == 200
+    assert _login(logged_in_client, "maria@example.com", DATOS["password"]).status_code == 401
+
+
+def test_reset_password_with_new_of_7_characters_returns_422_and_8_is_accepted(logged_in_client):
+    maria = _create(logged_in_client).json()
+
+    corta = _reset_password(logged_in_client, maria["id"], "1234567")
+
+    assert corta.status_code == 422
+    assert _login(logged_in_client, "maria@example.com", DATOS["password"]).status_code == 200
+    # `_login` cambia las cookies a las de María: se vuelve a entrar como el Admin.
+    _login(logged_in_client, "johan@example.com", ADMIN_PASSWORD)
+    assert _reset_password(logged_in_client, maria["id"], "12345678").status_code == 204
+
+
+def test_reset_password_by_a_non_admin_returns_403_and_changes_nothing(logged_in_client):
+    _create(logged_in_client, rol="contador")
+    pedro = _create(logged_in_client, nombre="Pedro", email="pedro@example.com").json()
+    # María es Contador: entra y trata de cambiarle la contraseña a Pedro.
+    _login(logged_in_client, "maria@example.com", DATOS["password"])
+
+    response = _reset_password(logged_in_client, pedro["id"], "clave-nueva-123")
+
+    assert response.status_code == 403
+    assert response.json()["message"] == "Solo un Admin puede restablecer la contraseña de otro usuario"
+    assert _login(logged_in_client, "pedro@example.com", DATOS["password"]).status_code == 200
+
+
+def test_reset_my_own_password_with_the_admin_endpoint_returns_422_and_changes_nothing(
+    logged_in_client, session
+):
+    response = _reset_password(logged_in_client, _admin_id(session), "clave-nueva-123")
+
+    assert response.status_code == 422
+    assert response.json()["message"] == (
+        "Para cambiar tu propia contraseña usa «Cambiar mi contraseña»"
+    )
+    assert _login(logged_in_client, "johan@example.com", ADMIN_PASSWORD).status_code == 200
+
+
+def test_reset_password_of_user_from_other_company_returns_404(logged_in_client, session):
+    service.create_company_with_owner(
+        session,
+        company_name="Café Sol",
+        owner_name="Ana",
+        email="ana@cafesol.com",
+        password="clave-de-ana-123",
+    )
+    ana = session.exec(select(User).where(User.email == "ana@cafesol.com")).one()
+
+    response = _reset_password(logged_in_client, ana.id, "clave-nueva-123")
+
+    assert response.status_code == 404
+    assert _login(logged_in_client, "ana@cafesol.com", "clave-de-ana-123").status_code == 200
+
+
+def test_reset_password_without_login_returns_401(client):
+    response = client.post(f"{URL}/1/password", json={"new_password": "clave-nueva-123"})
+
+    assert response.status_code == 401

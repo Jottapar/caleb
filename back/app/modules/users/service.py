@@ -5,7 +5,7 @@ from psycopg.errors import UniqueViolation
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, SQLModel, select
 
-from app.core.errors import AlreadyExistsError, BusinessError, NotFoundError
+from app.core.errors import AlreadyExistsError, BusinessError, ForbiddenError, NotFoundError
 from app.core.security import password_hash
 from app.core.validators import FORMATO_CORREO
 from app.modules.companies.models import Company
@@ -290,6 +290,34 @@ def change_password(session: Session, user_id: int, current_password: str, new_p
     _validate_password_length(new_password)
     if new_password == current_password:
         raise BusinessError("La contraseña nueva debe ser distinta de la actual")
+    user.password_hash = password_hash.hash(new_password)
+    session.commit()
+
+
+def reset_user_password(
+    session: Session, empresa_id: int, actor_id: int, user_id: int, new_password: str
+) -> None:
+    """Le pone `new_password` al usuario `user_id` de la empresa `empresa_id`, sin pedir la actual.
+
+    `actor_id` es quien lo pide: tiene que ser Admin. Es la única comprobación de rol que hay
+    hasta la historia 16e, que la reemplaza por la regla general.
+    """
+    actor_rol = session.exec(
+        select(UserCompany.rol).where(UserCompany.usuario_id == actor_id)
+    ).first()
+    if actor_rol != "admin":
+        raise ForbiddenError("Solo un Admin puede restablecer la contraseña de otro usuario")
+    if user_id == actor_id:
+        # Para la propia existe «Cambiar mi contraseña», que pide la actual.
+        raise BusinessError("Para cambiar tu propia contraseña usa «Cambiar mi contraseña»")
+    user = session.exec(
+        select(User)
+        .join(UserCompany, UserCompany.usuario_id == User.id)
+        .where(User.id == user_id, UserCompany.empresa_id == empresa_id)
+    ).first()
+    if not user:
+        raise NotFoundError("Usuario", user_id)
+    _validate_password_length(new_password)
     user.password_hash = password_hash.hash(new_password)
     session.commit()
 

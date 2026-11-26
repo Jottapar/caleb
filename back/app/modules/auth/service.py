@@ -32,3 +32,8 @@ def get_company(session: Session, user_id: int) -> Company | None:
         .join(UserCompany, UserCompany.empresa_id == Company.id)
         .where(UserCompany.usuario_id == user_id)
     ).first()
+
+
+def get_role(session: Session, user_id: int) -> str:
+    """El rol del usuario en su empresa (`admin`, `usuario` o `contador`). El MVP es una empresa por usuario."""
+    return session.exec(select(UserCompany.rol).where(UserCompany.usuario_id == user_id)).first()

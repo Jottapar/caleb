@@ -7,6 +7,9 @@ class LoginRequest(SQLModel):
 
 
 class MeRead(SQLModel):
+    # Quién es y qué rol tiene: la pantalla los usa para decidir qué botones mostrar.
+    id: int
+    rol: str
     user_name: str
     company_name: str
     # Ruta del logo actual ('' si no tiene). Cambia con cada logo nuevo: el front la usa para

@@ -56,14 +56,19 @@ def test_me_without_session_returns_401(client):
     assert response.status_code == 401
 
 
-def test_me_after_login_returns_user_name_and_company_name(logged_in_client):
+def test_me_after_login_returns_user_id_and_role(logged_in_client, session):
+    johan = session.exec(select(User).where(User.email == EMAIL)).one()
+
     response = logged_in_client.get("/api/v1/auth/me")
 
     assert response.status_code == 200
+    # El primer usuario de la empresa nace como Admin (lo crea el comando de consola).
     assert response.json() == {
+        "id": johan.id,
         "user_name": "Johan",
         "company_name": "Panadería Luna",
         "logo_version": "",
+        "rol": "admin",
     }
 
 

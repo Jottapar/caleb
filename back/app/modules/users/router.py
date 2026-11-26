@@ -4,7 +4,7 @@ from app.core.database import SessionDep
 from app.core.security import auth
 from app.modules.auth.dependencies import CurrentCompanyId, CurrentUser
 from app.modules.users import service
-from app.modules.users.schemas import PasswordChange, UserCreate, UserListRead, UserRead, UserUpdate
+from app.modules.users.schemas import PasswordChange, PasswordReset, UserCreate, UserListRead, UserRead, UserUpdate
 
 router = APIRouter(
     prefix="/users",
@@ -39,3 +39,14 @@ def delete_user(user_id: int, session: SessionDep, empresa_id: CurrentCompanyId)
 def change_my_password(data: PasswordChange, session: SessionDep, current_user: CurrentUser):
     # El usuario sale de la sesión, nunca de la URL ni del cuerpo: nadie cambia la contraseña de otro.
     service.change_password(session, current_user.id, data.current_password, data.new_password)
+
+
+@router.post("/{user_id}/password", status_code=status.HTTP_204_NO_CONTENT)
+def reset_user_password(
+    user_id: int,
+    data: PasswordReset,
+    session: SessionDep,
+    empresa_id: CurrentCompanyId,
+    current_user: CurrentUser,
+):
+    service.reset_user_password(session, empresa_id, current_user.id, user_id, data.new_password)
