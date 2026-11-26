@@ -23,6 +23,7 @@ export type ReceiptSheetLine = {
 export type Receipt = {
   id: number;
   tercero_id: number;
+  cliente_nombre: string; // → "Carlos" (se conserva aunque el cliente se elimine)
   numero: string;
   fecha: string;
   condicion: string;

@@ -1,7 +1,6 @@
 import { Center, Heading, Spinner, Stack, Text } from "@chakra-ui/react";
 import { useState } from "react";
 
-import { useThirdParties } from "../../thirdParties/hooks/useThirdParties";
 import { ReceiptDetailDialog } from "../components/ReceiptDetailDialog";
 import { ReceiptTable } from "../components/ReceiptTable";
 import { useAccountsReceivable } from "../hooks/useAccountsReceivable";
@@ -9,12 +8,7 @@ import type { Receipt } from "../types";
 
 export function AccountsReceivablePage() {
   const accountsReceivable = useAccountsReceivable();
-  const thirdParties = useThirdParties();
   const [viewingReceipt, setViewingReceipt] = useState<Receipt | null>(null);
-
-  function getClienteNombre(terceroId: number) {
-    return thirdParties.data?.find((tercero) => tercero.id === terceroId)?.nombre ?? "";
-  }
 
   return (
     <Stack gap="6">
@@ -37,7 +31,6 @@ export function AccountsReceivablePage() {
       {accountsReceivable.data && accountsReceivable.data.length > 0 && (
         <ReceiptTable
           receipts={accountsReceivable.data}
-          getClienteNombre={getClienteNombre}
           onView={setViewingReceipt}
         />
       )}
@@ -45,7 +38,7 @@ export function AccountsReceivablePage() {
       {viewingReceipt && (
         <ReceiptDetailDialog
           receipt={viewingReceipt}
-          clienteNombre={getClienteNombre(viewingReceipt.tercero_id)}
+          clienteNombre={viewingReceipt.cliente_nombre}
           onClose={() => setViewingReceipt(null)}
         />
       )}

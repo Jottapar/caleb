@@ -162,13 +162,6 @@ export function ReceiptsPage() {
     setPage(1);
   }
 
-  function getClienteNombre(terceroId: number) {
-    return (
-      thirdParties.data?.find((tercero) => tercero.id === terceroId)?.nombre ??
-      ""
-    );
-  }
-
   function handleOpenCreateDialog() {
     // Cliente y condición empiezan vacíos para obligar al usuario a elegirlos
     setTerceroId("");
@@ -278,7 +271,6 @@ export function ReceiptsPage() {
             <>
               <ReceiptTable
                 receipts={pageReceipts}
-                getClienteNombre={getClienteNombre}
                 onView={setViewingReceipt}
               />
               <TablePagination
@@ -321,7 +313,7 @@ export function ReceiptsPage() {
       {viewingReceipt && (
         <ReceiptDetailDialog
           receipt={viewingReceipt}
-          clienteNombre={getClienteNombre(viewingReceipt.tercero_id)}
+          clienteNombre={viewingReceipt.cliente_nombre}
           onClose={() => setViewingReceipt(null)}
           onCancelRequest={handleCancelRequest}
         />

@@ -21,6 +21,7 @@ const CLIENTE = {
 const RECIBO_CREDITO = {
   id: 1,
   tercero_id: 1,
+  cliente_nombre: "Cliente Uno",
   numero: "R-0002",
   fecha: "2026-11-11",
   condicion: "credito",
@@ -50,4 +51,19 @@ it("muestra la página de Cuentas por cobrar con cliente, deuda y vencimiento", 
   expect(row).toHaveTextContent("Cliente Uno");
   expect(row).toHaveTextContent("10000.00");
   expect(row).toHaveTextContent("2026-12-01");
+});
+
+it("muestra el nombre del cliente aunque ya no esté en la lista de clientes", async () => {
+  // Un cliente eliminado no sale de GET /third-parties, pero su recibo conserva el nombre.
+  server.use(
+    http.get(THIRD_PARTIES_URL, () => HttpResponse.json([])),
+    http.get(ACCOUNTS_RECEIVABLE_URL, () =>
+      HttpResponse.json([{ ...RECIBO_CREDITO, cliente_nombre: "Cliente Eliminado" }]),
+    ),
+  );
+
+  renderPage();
+
+  const row = await screen.findByRole("row", { name: /R-0002/ });
+  expect(row).toHaveTextContent("Cliente Eliminado");
 });

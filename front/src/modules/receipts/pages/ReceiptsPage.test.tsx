@@ -59,6 +59,7 @@ const PRODUCTO = {
 const RECIBO = {
   id: 1,
   tercero_id: 1,
+  cliente_nombre: "Cliente Uno",
   numero: "R-0001",
   fecha: "2026-11-11",
   condicion: "contado",
@@ -1084,4 +1085,19 @@ it("Limpiar filtros también restablece la condición y el estado", async () => 
   expect(screen.getByText("R-0002")).toBeInTheDocument();
   expect(screen.getByLabelText("Filtrar por condición")).toHaveValue("todas");
   expect(screen.getByLabelText("Filtrar por estado")).toHaveValue("todos");
+});
+
+it("muestra el nombre del cliente de un recibo aunque ya no esté en la lista de clientes", async () => {
+  // Un cliente eliminado no sale de GET /third-parties, pero su recibo conserva el nombre.
+  server.use(
+    http.get(THIRD_PARTIES_URL, () => HttpResponse.json([])),
+    http.get(RECEIPTS_URL, () =>
+      HttpResponse.json([{ ...RECIBO, cliente_nombre: "Cliente Eliminado" }]),
+    ),
+  );
+
+  renderPage();
+
+  const row = await screen.findByRole("row", { name: /R-0001/ });
+  expect(row).toHaveTextContent("Cliente Eliminado");
 });

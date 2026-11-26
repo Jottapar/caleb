@@ -5,11 +5,10 @@ import type { Receipt } from "../types";
 
 type Props = {
   receipts: Receipt[];
-  getClienteNombre: (terceroId: number) => string;
   onView: (receipt: Receipt) => void;
 };
 
-export function ReceiptTable({ receipts, getClienteNombre, onView }: Props) {
+export function ReceiptTable({ receipts, onView }: Props) {
   return (
     <Table.Root>
       <Table.Header>
@@ -29,7 +28,7 @@ export function ReceiptTable({ receipts, getClienteNombre, onView }: Props) {
         {receipts.map((receipt) => (
           <Table.Row key={receipt.id}>
             <Table.Cell>{receipt.numero}</Table.Cell>
-            <Table.Cell>{getClienteNombre(receipt.tercero_id)}</Table.Cell>
+            <Table.Cell>{receipt.cliente_nombre}</Table.Cell>
             <Table.Cell>{receipt.fecha}</Table.Cell>
             <Table.Cell>{receipt.fecha_vencimiento}</Table.Cell>
             <Table.Cell>{receipt.total}</Table.Cell>
