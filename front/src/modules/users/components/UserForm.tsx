@@ -10,11 +10,11 @@ import {
 import { useState } from "react";
 
 import { FORMATO_CORREO } from "../../../shared/lib/validators";
+import { MIN_LARGO_PASSWORD, passwordLengthError } from "../passwordRules";
 import type { User, UserCreate, UserRole } from "../types";
 
 // Las mismas reglas del backend (es quien manda), para avisar antes de enviar.
 const MAX_LARGO = 150; // nombre y correo
-const MIN_LARGO_PASSWORD = 8;
 
 const ROLES: { value: UserRole; label: string }[] = [
   { value: "admin", label: "Admin" },
@@ -44,9 +44,10 @@ function validate(
   } else if (!FORMATO_CORREO.test(email.trim())) {
     errors.email = "Escribe un correo válido, por ejemplo nombre@dominio.com";
   }
-  // La contraseña no se recorta: los espacios de los lados cuentan, igual que en el backend.
-  if (requirePassword && password.length < MIN_LARGO_PASSWORD) {
-    errors.password = `La contraseña debe tener al menos ${MIN_LARGO_PASSWORD} caracteres`;
+  const passwordError = requirePassword ? passwordLengthError(password) : undefined;
+  // Solo se agrega si hay error: con la clave presente (aunque vacía), el formulario no se envía.
+  if (passwordError) {
+    errors.password = passwordError;
   }
   return errors;
 }

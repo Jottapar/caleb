@@ -81,6 +81,9 @@ export function UsersPage() {
           user={editingUser}
           onSaved={(user) => setNotice(`Usuario actualizado: ${user.nombre}.`)}
           onDeleted={(user) => setNotice(`Usuario eliminado: ${user.nombre}.`)}
+          onPasswordReset={(user) =>
+            setNotice(`Contraseña restablecida: ${user.nombre}. Entrégale la nueva contraseña.`)
+          }
           onClose={() => setEditingUserId(null)}
         />
       )}

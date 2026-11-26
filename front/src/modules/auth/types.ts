@@ -5,6 +5,8 @@ export type LoginRequest = {
 
 // Tal como lo devuelve GET /auth/me (MeRead en el backend)
 export type Me = {
+  id: number;
+  rol: "admin" | "usuario" | "contador";
   user_name: string;
   company_name: string;
   logo_version: string; // → "empresas/1/logo-ab12.png" ('' si la empresa no tiene logo)

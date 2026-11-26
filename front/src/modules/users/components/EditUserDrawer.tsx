@@ -2,9 +2,11 @@ import { Button, Dialog, Drawer, HStack, Text } from "@chakra-ui/react";
 import { isAxiosError } from "axios";
 import { useState } from "react";
 
+import { useCurrentUser } from "../../auth/hooks/useCurrentUser";
 import { useDeleteUser } from "../hooks/useDeleteUser";
 import { useUpdateUser } from "../hooks/useUpdateUser";
 import type { User } from "../types";
+import { ResetPasswordDialog } from "./ResetPasswordDialog";
 import { UserForm } from "./UserForm";
 
 const ERROR_GENERICO = "No se pudo guardar el usuario. Intenta de nuevo.";
@@ -19,17 +21,22 @@ type Props = {
   onSaved: (user: User) => void;
   // Avisa que el usuario se eliminó (la página muestra el aviso y el panel se cierra).
   onDeleted: (user: User) => void;
+  // Avisa que el Admin le restableció la contraseña a este usuario.
+  onPasswordReset: (user: User) => void;
   onClose: () => void;
 };
 
 // El panel lateral para editar un usuario de la empresa.
-export function EditUserDrawer({ user, onSaved, onDeleted, onClose }: Props) {
+export function EditUserDrawer({ user, onSaved, onDeleted, onPasswordReset, onClose }: Props) {
   const updateUser = useUpdateUser();
   // Desactivar es otra petición, que se aplica al confirmar sin esperar a "Guardar".
   const toggleActive = useUpdateUser();
   const [confirmingDeactivate, setConfirmingDeactivate] = useState(false);
   const deleteUser = useDeleteUser();
+  // Quién tiene la sesión: decide si se ofrece «Restablecer contraseña».
+  const me = useCurrentUser();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
 
   // El backend responde los errores en español: se muestra tal cual. Un 409 es "el correo ya
   // existe" y va junto al campo del correo; cualquier otro error (por ejemplo, "la empresa debe
@@ -111,6 +118,16 @@ export function EditUserDrawer({ user, onSaved, onDeleted, onClose }: Props) {
             </Button>
             {/* Eliminar es para limpiar un usuario creado por error: solo si ya está inactivo y no
                 tiene historial. */}
+            {me.data?.rol === "admin" && me.data.id !== user.id && (
+              <Button
+                mt="6"
+                ml="3"
+                variant="outline"
+                onClick={() => setResettingPassword(true)}
+              >
+                Restablecer contraseña
+              </Button>
+            )}
             {!user.activo && !user.tiene_historial && (
               <Button
                 mt="6"
@@ -175,6 +192,14 @@ export function EditUserDrawer({ user, onSaved, onDeleted, onClose }: Props) {
             </Dialog.Content>
           </Dialog.Positioner>
         </Dialog.Root>
+      )}
+
+      {resettingPassword && (
+        <ResetPasswordDialog
+          user={user}
+          onReset={onPasswordReset}
+          onClose={() => setResettingPassword(false)}
+        />
       )}
 
       {confirmingDelete && (

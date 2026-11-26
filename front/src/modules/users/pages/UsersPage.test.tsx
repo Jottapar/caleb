@@ -40,7 +40,12 @@ function serveUsers(usuarios: TestUser[]) {
   return patches;
 }
 
-function renderPage() {
+// Quién tiene la sesión. El panel de editar lo pide (`/auth/me`) para saber si ofrecer
+// «Restablecer contraseña»; por defecto es un Admin con un id que no choca con los de las pruebas.
+const ME_ADMIN = { id: 99, rol: "admin", user_name: "Johan", company_name: "Luna", logo_version: "" };
+
+function renderPage(me: Partial<typeof ME_ADMIN> = {}) {
+  server.use(http.get("/api/v1/auth/me", () => HttpResponse.json({ ...ME_ADMIN, ...me })));
   renderWithProviders([{ path: "/", element: <UsersPage /> }]);
 }
 
@@ -759,5 +764,150 @@ it("si el backend rechaza el cambio, el mensaje se muestra y el diálogo sigue a
     await within(dialogo).findByText("La contraseña actual no es correcta"),
   ).toBeInTheDocument();
   expect(screen.getByRole("dialog", { name: /cambiar mi contraseña/i })).toBeInTheDocument();
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+});
+
+const MARIA_ACTIVA = {
+  id: 1,
+  nombre: "María Pérez",
+  email: "maria@example.com",
+  rol: "contador",
+  activo: true,
+};
+
+it("un Admin ve «Restablecer contraseña» en el panel de otro usuario", async () => {
+  serveUsers([{ ...MARIA_ACTIVA }]);
+  const user = userEvent.setup();
+
+  renderPage();
+  const panel = await abrirPanelDeMaria(user);
+
+  expect(
+    await within(panel).findByRole("button", { name: /^restablecer contraseña$/i }),
+  ).toBeInTheDocument();
+});
+
+it("no se ofrece Restablecer contraseña en el panel del propio usuario", async () => {
+  // La sesión es la de María (id 1): su propio panel.
+  serveUsers([{ ...MARIA_ACTIVA, rol: "admin" }]);
+  const user = userEvent.setup();
+
+  renderPage({ id: 1 });
+  const panel = await abrirPanelDeMaria(user);
+  // Se espera a que haya cargado quién soy: sin eso la ausencia no probaría nada.
+  await within(panel).findByRole("button", { name: /desactivar usuario/i });
+  await waitFor(() =>
+    expect(
+      within(panel).queryByRole("button", { name: /restablecer contraseña/i }),
+    ).not.toBeInTheDocument(),
+  );
+});
+
+it("quien no es Admin no ve Restablecer contraseña", async () => {
+  serveUsers([{ ...MARIA_ACTIVA }]);
+  const user = userEvent.setup();
+
+  renderPage({ rol: "contador" });
+  const panel = await abrirPanelDeMaria(user);
+  await within(panel).findByRole("button", { name: /desactivar usuario/i });
+
+  expect(
+    within(panel).queryByRole("button", { name: /restablecer contraseña/i }),
+  ).not.toBeInTheDocument();
+});
+
+async function abrirRestablecer(user: ReturnType<typeof userEvent.setup>) {
+  const panel = await abrirPanelDeMaria(user);
+  await user.click(await within(panel).findByRole("button", { name: /^restablecer contraseña$/i }));
+  return screen.findByRole("dialog", { name: /restablecer la contraseña de maría pérez/i });
+}
+
+async function llenarNueva(
+  user: ReturnType<typeof userEvent.setup>,
+  dialogo: HTMLElement,
+  { nueva, confirmar }: { nueva: string; confirmar: string },
+) {
+  await user.type(within(dialogo).getByLabelText(/^contraseña nueva/i), nueva);
+  await user.type(within(dialogo).getByLabelText(/^confirmar contraseña nueva/i), confirmar);
+}
+
+it("Restablecer contraseña abre un diálogo con el nombre y, al guardar, manda solo la nueva, se cierra y avisa", async () => {
+  serveUsers([{ ...MARIA_ACTIVA }]);
+  const recibidos: unknown[] = [];
+  server.use(
+    http.post(`${URL}/1/password`, async ({ request }) => {
+      recibidos.push(await request.json());
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  const dialogo = await abrirRestablecer(user);
+  await llenarNueva(user, dialogo, { nueva: "clave-nueva-123", confirmar: "clave-nueva-123" });
+  await user.click(within(dialogo).getByRole("button", { name: /^restablecer$/i }));
+
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: /restablecer la contraseña/i })).not.toBeInTheDocument(),
+  );
+  // La confirmación se compara en la pantalla y no viaja al backend.
+  expect(recibidos).toEqual([{ new_password: "clave-nueva-123" }]);
+  expect(screen.getByRole("status")).toHaveTextContent(/contraseña restablecida.*maría pérez/i);
+});
+
+it.each([
+  {
+    caso: "una nueva de menos de 8 caracteres",
+    nueva: "1234567",
+    confirmar: "1234567",
+    mensaje: /la contraseña debe tener al menos 8 caracteres/i,
+  },
+  {
+    caso: "una confirmación distinta",
+    nueva: "clave-nueva-123",
+    confirmar: "clave-nueva-124",
+    mensaje: /las contraseñas no coinciden/i,
+  },
+])("al restablecer, $caso se avisa junto al campo y no envía nada", async ({ nueva, confirmar, mensaje }) => {
+  serveUsers([{ ...MARIA_ACTIVA }]);
+  const envios: unknown[] = [];
+  server.use(
+    http.post(`${URL}/1/password`, async ({ request }) => {
+      envios.push(await request.json());
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  const dialogo = await abrirRestablecer(user);
+  await llenarNueva(user, dialogo, { nueva, confirmar });
+  await user.click(within(dialogo).getByRole("button", { name: /^restablecer$/i }));
+
+  expect(await within(dialogo).findByText(mensaje)).toBeInTheDocument();
+  expect(envios).toEqual([]);
+});
+
+it("al restablecer, si el backend rechaza el mensaje se muestra y el diálogo sigue abierto", async () => {
+  serveUsers([{ ...MARIA_ACTIVA }]);
+  server.use(
+    http.post(`${URL}/1/password`, () =>
+      HttpResponse.json(
+        { message: "Solo un Admin puede restablecer la contraseña de otro usuario" },
+        { status: 403 },
+      ),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  const dialogo = await abrirRestablecer(user);
+  await llenarNueva(user, dialogo, { nueva: "clave-nueva-123", confirmar: "clave-nueva-123" });
+  await user.click(within(dialogo).getByRole("button", { name: /^restablecer$/i }));
+
+  expect(
+    await within(dialogo).findByText("Solo un Admin puede restablecer la contraseña de otro usuario"),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("dialog", { name: /restablecer la contraseña/i })).toBeInTheDocument();
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
 });

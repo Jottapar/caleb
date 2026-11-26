@@ -2,17 +2,10 @@ import { Button, Dialog, Field, HStack, Input, Stack, Text } from "@chakra-ui/re
 import { isAxiosError } from "axios";
 import { useState } from "react";
 
+import { type NewPasswordErrors, validateNewPassword } from "../passwordRules";
 import { useChangePassword } from "../hooks/useChangePassword";
 
 const ERROR_GENERICO = "No se pudo cambiar la contraseña. Intenta de nuevo.";
-
-// La misma regla del backend (es quien manda), para avisar antes de enviar.
-const MIN_LARGO_PASSWORD = 8;
-
-type FormErrors = {
-  next?: string;
-  confirmation?: string;
-};
 
 type Props = {
   // Avisa que la contraseña se cambió (la página muestra el aviso).
@@ -26,7 +19,7 @@ export function ChangePasswordDialog({ onChanged, onClose }: Props) {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirmation, setConfirmation] = useState("");
-  const [errors, setErrors] = useState<FormErrors>({});
+  const [errors, setErrors] = useState<NewPasswordErrors>({});
 
   // El backend responde los errores en español (contraseña actual incorrecta, nueva igual a la
   // actual): se muestran tal cual, debajo del formulario.
@@ -37,14 +30,7 @@ export function ChangePasswordDialog({ onChanged, onClose }: Props) {
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    // Las contraseñas no se recortan: los espacios de los lados cuentan, igual que en el backend.
-    const nuevosErrores: FormErrors = {};
-    if (next.length < MIN_LARGO_PASSWORD) {
-      nuevosErrores.next = `La contraseña debe tener al menos ${MIN_LARGO_PASSWORD} caracteres`;
-    }
-    if (confirmation !== next) {
-      nuevosErrores.confirmation = "Las contraseñas no coinciden";
-    }
+    const nuevosErrores = validateNewPassword(next, confirmation);
     setErrors(nuevosErrores);
     // Con algún error no se envía nada: el usuario corrige primero.
     if (Object.keys(nuevosErrores).length > 0) {
