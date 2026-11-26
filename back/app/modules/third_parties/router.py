@@ -23,6 +23,11 @@ def list_third_parties(session: SessionDep, empresa_id: CurrentCompanyId):
     return service.list_third_parties(session, empresa_id)
 
 
+@router.get("/deleted", response_model=list[ThirdPartyRead])
+def list_deleted_third_parties(session: SessionDep, empresa_id: CurrentCompanyId):
+    return service.list_deleted_third_parties(session, empresa_id)
+
+
 @router.patch("/{third_party_id}", response_model=ThirdPartyRead)
 def update_third_party(
     third_party_id: int, data: ThirdPartyUpdate, session: SessionDep, empresa_id: CurrentCompanyId
@@ -33,3 +38,8 @@ def update_third_party(
 @router.delete("/{third_party_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_third_party(third_party_id: int, session: SessionDep, empresa_id: CurrentCompanyId):
     service.delete_third_party(session, third_party_id, empresa_id)
+
+
+@router.post("/{third_party_id}/restore", response_model=ThirdPartyRead)
+def restore_third_party(third_party_id: int, session: SessionDep, empresa_id: CurrentCompanyId):
+    return service.restore_third_party(session, third_party_id, empresa_id)

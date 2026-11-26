@@ -1,6 +1,7 @@
 import pytest
 from sqlmodel import select
 
+from app.core.mixins import utc_now
 from app.modules.banks.models import Bank
 from app.modules.companies.models import Company
 from app.modules.third_parties import service as third_parties_service
@@ -588,6 +589,104 @@ def test_deleting_a_third_party_saves_deleted_at_and_the_user_as_deleted_by(
     fila = _third_party_row(session, created["id"])
     assert fila.deleted_at is not None
     assert fila.deleted_by_id == _user_id(session, EMAIL)
+
+
+# ---------- soft eliminados ----------
+
+
+def _soft_delete(logged_in_client, third_party_id: int) -> None:
+    response = logged_in_client.delete(
+        f"{URL}/{third_party_id}", headers=_csrf_headers(logged_in_client)
+    )
+    assert response.status_code == 204
+
+
+def test_list_deleted_third_parties_returns_only_deleted_ones_of_current_company(
+    logged_in_client, session
+):
+    eliminado = _create(logged_in_client, nombre="Carlos")
+    proveedor_eliminado = _create(logged_in_client, nombre="Luis", tipo="proveedor")
+    _create(logged_in_client, nombre="Ana")
+    _soft_delete(logged_in_client, eliminado["id"])
+    _soft_delete(logged_in_client, proveedor_eliminado["id"])
+    # Uno soft eliminado de otra empresa: no debe salir.
+    ajeno = session.get(ThirdParty, _create_in_other_company(session))
+    ajeno.deleted_at = utc_now()
+    session.flush()
+
+    response = logged_in_client.get(f"{URL}/deleted")
+
+    assert response.status_code == 200
+    assert {tercero["nombre"] for tercero in response.json()} == {"Carlos", "Luis"}
+
+
+def test_list_deleted_third_parties_returns_empty_list_when_none_deleted(logged_in_client):
+    _create(logged_in_client, nombre="Ana")
+
+    response = logged_in_client.get(f"{URL}/deleted")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def _restore(logged_in_client, third_party_id: int):
+    return logged_in_client.post(
+        f"{URL}/{third_party_id}/restore", headers=_csrf_headers(logged_in_client)
+    )
+
+
+def test_restore_third_party_returns_200_and_it_appears_again_in_the_list(logged_in_client):
+    created = _create(logged_in_client, nombre="Carlos")
+    _soft_delete(logged_in_client, created["id"])
+
+    response = _restore(logged_in_client, created["id"])
+
+    assert response.status_code == 200
+    assert response.json()["nombre"] == "Carlos"
+    nombres = [tercero["nombre"] for tercero in logged_in_client.get(URL).json()]
+    assert "Carlos" in nombres
+    assert logged_in_client.get(f"{URL}/deleted").json() == []
+
+
+def test_restore_third_party_clears_deleted_at_and_deleted_by(logged_in_client, session):
+    created = _create(logged_in_client)
+    _soft_delete(logged_in_client, created["id"])
+
+    _restore(logged_in_client, created["id"])
+
+    fila = _third_party_row(session, created["id"])
+    assert fila.deleted_at is None
+    assert fila.deleted_by_id is None
+
+
+def test_restore_third_party_keeps_its_activo_value(logged_in_client):
+    created = _create(logged_in_client)
+    logged_in_client.patch(
+        f"{URL}/{created['id']}", json={"activo": False}, headers=_csrf_headers(logged_in_client)
+    )
+    _soft_delete(logged_in_client, created["id"])
+
+    response = _restore(logged_in_client, created["id"])
+
+    assert response.json()["activo"] is False
+
+
+def test_restore_third_party_that_is_not_deleted_returns_404(logged_in_client):
+    created = _create(logged_in_client)
+
+    response = _restore(logged_in_client, created["id"])
+
+    assert response.status_code == 404
+
+
+def test_restore_third_party_from_other_company_returns_404(logged_in_client, session):
+    ajeno = session.get(ThirdParty, _create_in_other_company(session))
+    ajeno.deleted_at = utc_now()
+    session.flush()
+
+    response = _restore(logged_in_client, ajeno.id)
+
+    assert response.status_code == 404
 
 
 CUENTA = {"tipo_cuenta": "ahorros", "numero_cuenta": "0123456789"}

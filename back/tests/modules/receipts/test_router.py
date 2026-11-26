@@ -1091,3 +1091,22 @@ def test_receipt_still_shows_client_name_after_deleting_the_client(logged_in_cli
     recibos = logged_in_client.get(URL).json()
 
     assert recibos[0]["cliente_nombre"] == "Cliente de prueba"
+
+
+def test_create_receipt_accepts_a_restored_client(logged_in_client, session):
+    cliente_id = _create_cliente(logged_in_client)
+    item = _create_item(logged_in_client, session)
+    logged_in_client.delete(
+        f"{THIRD_PARTIES_URL}/{cliente_id}", headers=_csrf_headers(logged_in_client)
+    )
+    logged_in_client.post(
+        f"{THIRD_PARTIES_URL}/{cliente_id}/restore", headers=_csrf_headers(logged_in_client)
+    )
+
+    response = logged_in_client.post(
+        URL,
+        json={"tercero_id": cliente_id, "lineas": [{"item_id": item["id"], "cantidad": "1"}]},
+        headers=_csrf_headers(logged_in_client),
+    )
+
+    assert response.status_code == 201

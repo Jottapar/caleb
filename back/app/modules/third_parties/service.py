@@ -90,6 +90,17 @@ def active_third_parties():
     return select(ThirdParty).where(ThirdParty.deleted_at.is_(None))
 
 
+def deleted_third_parties():
+    """El espejo de `active_third_parties()`: el `select` de los terceros soft eliminados."""
+    return select(ThirdParty).where(ThirdParty.deleted_at.is_not(None))
+
+
+def list_deleted_third_parties(session: Session, empresa_id: int) -> list[ThirdParty]:
+    return list(
+        session.exec(deleted_third_parties().where(ThirdParty.empresa_id == empresa_id)).all()
+    )
+
+
 def list_third_parties(session: Session, empresa_id: int) -> list[ThirdParty]:
     return list(
         session.exec(active_third_parties().where(ThirdParty.empresa_id == empresa_id)).all()
@@ -157,3 +168,21 @@ def delete_third_party(session: Session, third_party_id: int, empresa_id: int) -
     third_party.deleted_at = utc_now()
     session.add(third_party)
     session.commit()
+
+
+def restore_third_party(session: Session, third_party_id: int, empresa_id: int) -> ThirdParty:
+    # Se busca solo entre los soft eliminados de la empresa: uno que no lo esta, o es de otra
+    # empresa, da "no encontrado".
+    third_party = session.exec(
+        deleted_third_parties().where(
+            ThirdParty.id == third_party_id, ThirdParty.empresa_id == empresa_id
+        )
+    ).first()
+    if not third_party:
+        raise NotFoundError("Tercero", third_party_id)
+    third_party.deleted_at = None
+    third_party.deleted_by_id = None
+    session.add(third_party)
+    session.commit()
+    session.refresh(third_party)
+    return third_party
