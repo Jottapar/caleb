@@ -9,6 +9,7 @@ import {
 } from "@chakra-ui/react";
 import { useState } from "react";
 
+import { ChangePasswordDialog } from "../components/ChangePasswordDialog";
 import { CreateUserDialog } from "../components/CreateUserDialog";
 import { EditUserDrawer } from "../components/EditUserDrawer";
 import { UserTable } from "../components/UserTable";
@@ -18,6 +19,7 @@ import { useUsers } from "../hooks/useUsers";
 export function UsersPage() {
   const users = useUsers();
   const [creating, setCreating] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
   // El aviso de éxito (usuario creado o editado); null si no hay nada que avisar.
   const [notice, setNotice] = useState<string | null>(null);
   // El id del usuario cuyo panel de editar está abierto; null si no hay panel. Se guarda el id y
@@ -29,15 +31,20 @@ export function UsersPage() {
     <Stack gap="6">
       <HStack justify="space-between" wrap="wrap">
         <Heading size="xl">Usuarios</Heading>
-        <Button
-          colorPalette="brand"
-          onClick={() => {
-            setNotice(null);
-            setCreating(true);
-          }}
-        >
-          Crear usuario nuevo
-        </Button>
+        <HStack>
+          <Button variant="outline" onClick={() => setChangingPassword(true)}>
+            Cambiar mi contraseña
+          </Button>
+          <Button
+            colorPalette="brand"
+            onClick={() => {
+              setNotice(null);
+              setCreating(true);
+            }}
+          >
+            Crear usuario nuevo
+          </Button>
+        </HStack>
       </HStack>
 
       {notice && (
@@ -75,6 +82,13 @@ export function UsersPage() {
           onSaved={(user) => setNotice(`Usuario actualizado: ${user.nombre}.`)}
           onDeleted={(user) => setNotice(`Usuario eliminado: ${user.nombre}.`)}
           onClose={() => setEditingUserId(null)}
+        />
+      )}
+
+      {changingPassword && (
+        <ChangePasswordDialog
+          onChanged={() => setNotice("Contraseña cambiada. Desde ahora entras con la nueva.")}
+          onClose={() => setChangingPassword(false)}
         />
       )}
 

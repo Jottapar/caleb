@@ -624,3 +624,140 @@ it("si el backend rechaza eliminar, el mensaje se muestra en la confirmación y 
   expect(screen.getByRole("alertdialog")).toBeInTheDocument();
   expect(screen.getByRole("row", { name: /maría pérez/i, hidden: true })).toBeInTheDocument();
 });
+
+async function abrirCambiarContrasena(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole("button", { name: /cambiar mi contraseña/i }));
+  return screen.findByRole("dialog", { name: /cambiar mi contraseña/i });
+}
+
+it("«Cambiar mi contraseña» abre un diálogo con actual, nueva y confirmar", async () => {
+  serveUsers([{ id: 1, nombre: "Johan", email: "johan@example.com", rol: "admin", activo: true }]);
+  const user = userEvent.setup();
+
+  renderPage();
+  const dialogo = await abrirCambiarContrasena(user);
+
+  expect(within(dialogo).getByLabelText(/^contraseña actual/i)).toHaveAttribute("type", "password");
+  expect(within(dialogo).getByLabelText(/^contraseña nueva/i)).toHaveAttribute("type", "password");
+  expect(within(dialogo).getByLabelText(/^confirmar contraseña nueva/i)).toHaveAttribute(
+    "type",
+    "password",
+  );
+});
+
+const ADMIN_UNICO = { id: 1, nombre: "Johan", email: "johan@example.com", rol: "admin", activo: true };
+
+async function llenarContrasenas(
+  user: ReturnType<typeof userEvent.setup>,
+  dialogo: HTMLElement,
+  { actual, nueva, confirmar }: { actual: string; nueva: string; confirmar: string },
+) {
+  await user.type(within(dialogo).getByLabelText(/^contraseña actual/i), actual);
+  await user.type(within(dialogo).getByLabelText(/^contraseña nueva/i), nueva);
+  await user.type(within(dialogo).getByLabelText(/^confirmar contraseña nueva/i), confirmar);
+}
+
+it("al cambiarla bien se manda solo la actual y la nueva, el diálogo se cierra y avisa", async () => {
+  serveUsers([{ ...ADMIN_UNICO }]);
+  const recibidos: unknown[] = [];
+  server.use(
+    http.post(`${URL}/me/password`, async ({ request }) => {
+      recibidos.push(await request.json());
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  const dialogo = await abrirCambiarContrasena(user);
+  await llenarContrasenas(user, dialogo, {
+    actual: "una-clave-segura",
+    nueva: "clave-nueva-123",
+    confirmar: "clave-nueva-123",
+  });
+  await user.click(within(dialogo).getByRole("button", { name: /^guardar$/i }));
+
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: /cambiar mi contraseña/i })).not.toBeInTheDocument(),
+  );
+  // La confirmación se compara en la pantalla y no viaja al backend.
+  expect(recibidos).toEqual([
+    { current_password: "una-clave-segura", new_password: "clave-nueva-123" },
+  ]);
+  expect(screen.getByRole("status")).toHaveTextContent(/contraseña cambiada/i);
+});
+
+function contarEnvios() {
+  const envios: unknown[] = [];
+  server.use(
+    http.post(`${URL}/me/password`, async ({ request }) => {
+      envios.push(await request.json());
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  return envios;
+}
+
+it("una nueva de menos de 8 caracteres se avisa junto al campo y no envía nada", async () => {
+  serveUsers([{ ...ADMIN_UNICO }]);
+  const envios = contarEnvios();
+  const user = userEvent.setup();
+
+  renderPage();
+  const dialogo = await abrirCambiarContrasena(user);
+  await llenarContrasenas(user, dialogo, {
+    actual: "una-clave-segura",
+    nueva: "1234567",
+    confirmar: "1234567",
+  });
+  await user.click(within(dialogo).getByRole("button", { name: /^guardar$/i }));
+
+  expect(
+    await within(dialogo).findByText(/la contraseña debe tener al menos 8 caracteres/i),
+  ).toBeInTheDocument();
+  expect(envios).toEqual([]);
+  expect(screen.getByRole("dialog", { name: /cambiar mi contraseña/i })).toBeInTheDocument();
+});
+
+it("una confirmación que no coincide se avisa junto al campo y no envía nada", async () => {
+  serveUsers([{ ...ADMIN_UNICO }]);
+  const envios = contarEnvios();
+  const user = userEvent.setup();
+
+  renderPage();
+  const dialogo = await abrirCambiarContrasena(user);
+  await llenarContrasenas(user, dialogo, {
+    actual: "una-clave-segura",
+    nueva: "clave-nueva-123",
+    confirmar: "clave-nueva-124",
+  });
+  await user.click(within(dialogo).getByRole("button", { name: /^guardar$/i }));
+
+  expect(await within(dialogo).findByText(/las contraseñas no coinciden/i)).toBeInTheDocument();
+  expect(envios).toEqual([]);
+});
+
+it("si el backend rechaza el cambio, el mensaje se muestra y el diálogo sigue abierto", async () => {
+  serveUsers([{ ...ADMIN_UNICO }]);
+  server.use(
+    http.post(`${URL}/me/password`, () =>
+      HttpResponse.json({ message: "La contraseña actual no es correcta" }, { status: 422 }),
+    ),
+  );
+  const user = userEvent.setup();
+
+  renderPage();
+  const dialogo = await abrirCambiarContrasena(user);
+  await llenarContrasenas(user, dialogo, {
+    actual: "equivocada",
+    nueva: "clave-nueva-123",
+    confirmar: "clave-nueva-123",
+  });
+  await user.click(within(dialogo).getByRole("button", { name: /^guardar$/i }));
+
+  expect(
+    await within(dialogo).findByText("La contraseña actual no es correcta"),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("dialog", { name: /cambiar mi contraseña/i })).toBeInTheDocument();
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+});

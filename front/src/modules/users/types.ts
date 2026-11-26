@@ -27,3 +27,10 @@ export type User = {
 export type UserUpdate = Partial<
   Pick<User, "nombre" | "email" | "rol" | "activo">
 >;
+
+// Lo que se manda a POST /users/me/password (PasswordChange en el backend). La confirmación de la
+// nueva contraseña se compara en la pantalla y no viaja.
+export type PasswordChange = {
+  current_password: string;
+  new_password: string;
+};
